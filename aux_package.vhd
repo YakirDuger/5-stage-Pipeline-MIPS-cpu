@@ -1,366 +1,428 @@
----------------------------------------------------------------------------------------------
--- Copyright 2025 Hananya Ribo 
--- Advanced CPU architecture and Hardware Accelerators Lab 361-1-4693 BGU
----------------------------------------------------------------------------------------------
 library IEEE;
+USE work.cond_compilation_package.all;
 use ieee.std_logic_1164.all;
-USE work.cond_comilation_package.all;
-
 
 package aux_package is
-
---------------------------------------------------------------------------------------------
-	COMPONENT top_pipeline is
-		generic( 
-			DATA_BUS_WIDTH     : integer   := 32;
-			PC_WIDTH           : integer   := 10;
-			NEXT_PC_WIDTH      : integer   := 8;
-			FUNCT_WIDTH        : integer   := 6;
-			CLK_CNT_WIDTH      : integer   := 16;
-			INST_CNT_WIDTH     : integer   := 16
-		);            
-		PORT(   
-			-- Inputs
-			rst_i              : IN    STD_LOGIC;
-			clk_i              : IN    STD_LOGIC; 
-			BPADDR_i           : IN    STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0); -- (break point address)
-			
-			-- Outputs (as shown in Figure 8)
-			--CLKCNT_o           : OUT   STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0);
-			--INSTCNT_o          : OUT   STD_LOGIC_VECTOR(INST_CNT_WIDTH-1 DOWNTO 0);
-			
-			-- Pipeline stage PC tracking
-			IFpc_o             : OUT   STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			IDpc_o             : OUT   STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			EXpc_o             : OUT   STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			MEMpc_o            : OUT   STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			WBpc_o             : OUT   STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			
-			-- Pipeline stage instruction tracking
-			IFinstruction_o    : OUT   STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			IDinstruction_o    : OUT   STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			EXinstruction_o    : OUT   STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			MEMinstruction_o   : OUT   STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			WBinstruction_o    : OUT   STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			
-			-- Performance counters
-			STRIGGER_o         : OUT   STD_LOGIC;
-			FHCNT_o            : OUT   STD_LOGIC_VECTOR(7 DOWNTO 0);
-			STCNT_o            : OUT   STD_LOGIC_VECTOR(7 DOWNTO 0)
-			--mclk_cnt_o			:OUT	STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0);
-			--inst_cnt_o 			:OUT	STD_LOGIC_VECTOR(INST_CNT_WIDTH-1 DOWNTO 0)
-		);
-	end COMPONENT;
----------------------------------------------------------------------------------------------
+--------------------------- MIPS ---------------------------
 	COMPONENT MIPS IS
-	generic( 
-			WORD_GRANULARITY : boolean 	:= G_WORD_GRANULARITY;
-	       		 MODELSIM : integer 			:= G_MODELSIM;
-			DATA_BUS_WIDTH : integer 	:= 32;
-			ITCM_ADDR_WIDTH : integer 	:= G_ADDRWIDTH;
-			DTCM_ADDR_WIDTH : integer 	:= G_ADDRWIDTH;
-			PC_WIDTH : integer 			:= 10;
-			NEXT_PC_WIDTH : integer 	:= 8;
-			FUNCT_WIDTH : integer 		:= 6;
-			DATA_WORDS_NUM : integer 	:= G_DATA_WORDS_NUM;
-			CLK_CNT_WIDTH : integer 	:= 16;
-			INST_CNT_WIDTH : integer 	:= 16
-	);
-	PORT(	rst_i		 		:IN	STD_LOGIC;
-			clk_i				:IN	STD_LOGIC; 
-			PBADD_i				:IN STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0); -- Needs to have 2 additional zeros added to the LSB by TOP
-			-- Output important signals to pins for easy display in SignalTap
-			pc_o				:OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			alu_result_o 		:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			read_data1_o 		:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			read_data2_o 		:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			write_data_o		:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			instruction_top_o	:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			Branch_ctrl_o		:OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0);
-			Zero_o				:OUT 	STD_LOGIC; 
-			MemWrite_ctrl_o		:OUT 	STD_LOGIC;
-			RegWrite_ctrl_o		:OUT 	STD_LOGIC;
-			-- Outputs for the TOP e
-			IF_PC_o				:OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			ID_PC_o             :OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			EX_PC_o             :OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			MEM_PC_o            :OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			WB_PC_o             :OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			IF_inst_o			:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			ID_inst_o           :OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			EX_inst_o           :OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			MEM_inst_o          :OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			WB_inst_o           :OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			STRIGGER_o			:OUT	STD_LOGIC;
-			FH_cnt_o            :OUT	STD_LOGIC_VECTOR(7 DOWNTO 0);
-			ST_cnt_o            :OUT	STD_LOGIC_VECTOR(7 DOWNTO 0);
-			mclk_cnt_o			:OUT	STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0);
-			inst_cnt_o 			:OUT	STD_LOGIC_VECTOR(INST_CNT_WIDTH-1 DOWNTO 0)
-	);		
-END COMPONENT;
----------------------------------------------------------  
-	COMPONENT control IS
-	PORT( 	
-			clk_i 				: IN 	STD_LOGIC;
-			opcode_i, funct_i	: IN 	STD_LOGIC_VECTOR(5 DOWNTO 0);
-			RegDst_ctrl_o 		: OUT 	STD_LOGIC;
-			ALUSrc_ctrl_o 		: OUT 	STD_LOGIC;
-			MemtOReg_ctrl_o 	: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0);
-			RegWrite_ctrl_o 	: OUT 	STD_LOGIC;
-			MemRead_ctrl_o 		: OUT 	STD_LOGIC;
-			MemWrite_ctrl_o	 	: OUT 	STD_LOGIC;
-			Branch_ctrl_o 		: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0);
-			ALUOp_ctrl_o	 	: OUT 	STD_LOGIC_VECTOR(5 DOWNTO 0);
-			jump_o				: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0)
-		);
+		GENERIC (	MemWidth 	: INTEGER := 8;
+					SIM 		: BOOLEAN := FALSE;
+					CtrlBusSize	: integer := 8;
+					AddrBusSize	: integer := 32;
+					DataBusSize	: integer := 32;
+					IOSize		: integer := 8
+				 );
+		PORT( reset, clock, ena	: IN 	STD_LOGIC; 
+			-- Output important signals to pins for easy display in Simulator
+			PC					: OUT  	STD_LOGIC_VECTOR(9 DOWNTO 0);
+			CLKCNT				: OUT  	STD_LOGIC_VECTOR(15 DOWNTO 0);
+			STCNT				: OUT  	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			FHCNT				: OUT  	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			BPADD				: IN  	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			ST_trigger			: OUT	STD_LOGIC;
+			ControlBus			: OUT	STD_LOGIC_VECTOR(CtrlBusSize-1 DOWNTO 0);
+			MemReadBus			: OUT 	STD_LOGIC;
+			MemWriteBus			: OUT 	STD_LOGIC;
+			AddressBus			: OUT	STD_LOGIC_VECTOR(AddrBusSize-1 DOWNTO 0);
+			GIE					: OUT	STD_LOGIC;
+			INTR				: IN	STD_LOGIC;
+			INTA				: OUT	STD_LOGIC;
+			INTR_Active			: IN	STD_LOGIC;
+			CLR_IRQ				: IN	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			DataBus				: INOUT	STD_LOGIC_VECTOR(DataBusSize-1 DOWNTO 0);
+			FIROUT				: IN	STD_LOGIC_VECTOR(31 DOWNTO 0);	
+			BTCNT				: IN	STD_LOGIC_VECTOR(31 DOWNTO 0);
+			CS_FIROUT			: IN	STD_LOGIC;
+			COEF3_0				: IN	STD_LOGIC_VECTOR(31 DOWNTO 0);
+			COEF7_4				: IN	STD_LOGIC_VECTOR(31 DOWNTO 0);
+			CS_COEF3_0			: IN	STD_LOGIC;
+			CS_COEF7_4			: IN	STD_LOGIC;
+			FIRCTL_STATUS		: IN	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			CS_FIRCTL			: IN	STD_LOGIC
+			);
 	END COMPONENT;
----------------------------------------------------------	
+
+	COMPONENT Ifetch IS
+	GENERIC (MemWidth	: INTEGER;
+			 SIM 		: BOOLEAN);
+	PORT(	Instruction						       	: OUT	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+        	PC_plus_4_out 					       	: OUT	STD_LOGIC_VECTOR( 9 DOWNTO 0 );
+        	Add_result 						       	: IN 	STD_LOGIC_VECTOR( 7 DOWNTO 0 );
+        	PCSrc 							       	: IN 	STD_LOGIC_VECTOR( 1 DOWNTO 0 );
+      		PC_out 							       	: OUT	STD_LOGIC_VECTOR( 9 DOWNTO 0 );
+			JumpAddr						       	: IN	STD_LOGIC_VECTOR( 7 DOWNTO 0 );
+        	clock, ena, Stall_IF,  reset 			: IN 	STD_LOGIC;
+			INTA									: IN	STD_LOGIC;
+			Read_ISR_PC								: IN	STD_LOGIC;
+			HOLD_PC									: IN 	STD_LOGIC;
+			ISRAddr									: IN	STD_LOGIC_VECTOR(31 DOWNTO 0)
+			);
+	END COMPONENT;
+
+	COMPONENT Idecode
+	PORT(	read_data_1						: OUT 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			read_data_2						: OUT 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			write_register_address_0 		: OUT   STD_LOGIC_VECTOR( 4 DOWNTO 0 );
+			write_register_address_1 		: OUT   STD_LOGIC_VECTOR( 4 DOWNTO 0 );
+			write_register_address      	: IN    STD_LOGIC_VECTOR( 4 DOWNTO 0 );
+			Instruction 					: IN 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			PC_plus_4_shifted				: IN 	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			RegWrite						: IN 	STD_LOGIC;
+			ForwardA_ID, ForwardB_ID		: IN 	STD_LOGIC;
+			BranchBeq, BranchBne, Jump, JAL	: IN 	STD_LOGIC; -- Added JAL
+			Stall_ID					: IN    STD_LOGIC;
+			write_data				: IN	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			Branch_read_data_FW			: IN	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			Sign_extend 				: OUT 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			PCSrc		 				: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0);
+			JumpAddr					: OUT   STD_LOGIC_VECTOR( 7 DOWNTO 0 );
+			PCBranch_addr 				: OUT 	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			GIE							: OUT 	STD_LOGIC;
+			Read_ISR_PC					: IN	STD_LOGIC;
+			EPC							: IN	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			INTR						: IN	STD_LOGIC;
+			INTR_Active					: IN	STD_LOGIC;
+			CLR_IRQ						: IN	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			clock,reset					: IN 	STD_LOGIC );
+	END COMPONENT;
+
+	COMPONENT control
+	PORT( 	
+		Opcode 			: IN 	STD_LOGIC_VECTOR(5 DOWNTO 0);
+		Funct			: IN 	STD_LOGIC_VECTOR(5 DOWNTO 0);
+		RegDst 			: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0);
+		ALUSrc 			: OUT 	STD_LOGIC;
+		MemtoReg 		: OUT 	STD_LOGIC;
+		RegWrite 		: OUT 	STD_LOGIC;
+		MemRead 		: OUT 	STD_LOGIC;
+		MemWrite 		: OUT 	STD_LOGIC;
+		BranchBeq 		: OUT 	STD_LOGIC;
+		BranchBne 		: OUT 	STD_LOGIC;
+		Jump			: OUT 	STD_LOGIC;
+		Jal				: OUT 	STD_LOGIC;
+		ALUop 			: OUT 	STD_LOGIC_VECTOR( 1 DOWNTO 0 );
+		INTR			: IN 	STD_LOGIC;
+		-- INTA			: INOUT STD_LOGIC;
+		IF_FLUSH		: OUT 	STD_LOGIC;
+		ID_FLUSH		: OUT 	STD_LOGIC;
+		EX_FLUSH		: OUT 	STD_LOGIC;
+		HOLD_PC			: IN 	STD_LOGIC;
+		Read_ISR_PC		: IN 	STD_LOGIC;	
+		clock, reset	: IN 	STD_LOGIC );
+	END COMPONENT;
+
+	COMPONENT  Execute
+	PORT(	Read_data_1 	: IN 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			Read_data_2 	: IN 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			Sign_extend 	: IN 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			Function_opcode : IN 	STD_LOGIC_VECTOR( 5 DOWNTO 0 );
+			Opcode			: IN 	STD_LOGIC_VECTOR( 5 DOWNTO 0 );
+			ALUOp 			: IN 	STD_LOGIC_VECTOR( 1 DOWNTO 0 );
+			ALUSrc 			: IN 	STD_LOGIC;
+			Zero 			: OUT	STD_LOGIC;
+			RegDst			: IN    STD_LOGIC_VECTOR( 1 DOWNTO 0 );
+			ALU_Result 		: OUT	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			PC_plus_4 		: IN 	STD_LOGIC_VECTOR( 9 DOWNTO 0 );
+			Wr_reg_addr     : OUT   STD_LOGIC_VECTOR( 4 DOWNTO 0 );
+			Wr_reg_addr_0	: IN    STD_LOGIC_VECTOR( 4 DOWNTO 0 );
+			Wr_reg_addr_1	: IN    STD_LOGIC_VECTOR( 4 DOWNTO 0 );
+			Wr_data_FW_WB	: IN 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			Wr_data_FW_MEM	: IN 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			ForwardA 		: IN 	STD_LOGIC_VECTOR(1 DOWNTO 0);		
+			ForwardB		: IN 	STD_LOGIC_VECTOR(1 DOWNTO 0);	
+			WriteData_EX    : OUT   STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			Flush_EX		: IN 	STD_LOGIC;
+			clock, reset	: IN 	STD_LOGIC );
+	END COMPONENT;
 
 	COMPONENT dmemory IS
 		generic(
 			DATA_BUS_WIDTH : integer := 32;
 			DTCM_ADDR_WIDTH : integer := 8;
-			WORDS_NUM : integer := 256;
-			PC_WIDTH  : integer := 10
+			WORDS_NUM : integer := 256
 		);
 		PORT(	clk_i,rst_i			: IN 	STD_LOGIC;
 				dtcm_addr_i 		: IN 	STD_LOGIC_VECTOR(DTCM_ADDR_WIDTH-1 DOWNTO 0);
 				dtcm_data_wr_i 		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 				MemRead_ctrl_i  	: IN 	STD_LOGIC;
 				MemWrite_ctrl_i 	: IN 	STD_LOGIC;
-				pc_plus4_i 			: IN 	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				-- For TOP
-				curr_PC_i			: IN 	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				curr_inst_i			: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				-- Pass the ALU result onwards
-				ALU_res_i			: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				ALU_res_o			: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				-- Instruction
-				RegisterRes_i		: IN 	STD_LOGIC_VECTOR(4 DOWNTO 0);
-				RegisterRes_o		: OUT 	STD_LOGIC_VECTOR(4 DOWNTO 0);
-				-- Passed onwards via WB --------
-				MemtOReg_ctrl_i 	: IN 	STD_LOGIC_VECTOR(1 DOWNTO 0); 
-				MemtOReg_ctrl_o 	: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0); 
-				RegWrite_ctrl_i 	: IN 	STD_LOGIC;
-				RegWrite_ctrl_o 	: OUT 	STD_LOGIC;
-				pc_plus4_o 			: OUT 	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				-- For TOP
-				-- Non synchronics Outputs
-				curr_pc_o			: OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				curr_inst_o			: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				synch_curr_pc_o		: OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				synch_curr_inst_o	: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				-- DTCM Output
-				dtcm_data_rd_o 		: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				-- Non syncrhonic output
-				dtcm_data_rd_not_syncronic_o 	: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0)
+				dtcm_data_rd_o 		: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0)
 		);
 	END COMPONENT;
----------------------------------------------------------		
-	COMPONENT  Execute IS
-		generic(
-			DATA_BUS_WIDTH : integer := 32;
-			FUNCT_WIDTH : integer := 6;
-			PC_WIDTH : integer := 10
-		);
-		PORT(	read_data1_i 		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				read_data2_i 		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				sign_extend_i 		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				funct_i 			: IN 	STD_LOGIC_VECTOR(6-1 DOWNTO 0);
-				ALUOp_ctrl_i 		: IN 	STD_LOGIC_VECTOR(5 DOWNTO 0);
-				ALUSrc_ctrl_i 		: IN 	STD_LOGIC;
-				clk_i				: IN 	STD_LOGIC; -- new
-				-- For TOP
-				curr_PC_i			: IN 	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				curr_inst_i			: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				----------
-				pc_plus4_i 			: IN 	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				ForwardRS			: IN 	STD_LOGIC_VECTOR (1 DOWNTO 0);
-				ForwardRT			: IN 	STD_LOGIC_VECTOR (1 DOWNTO 0);
-				RegForwardMEM		: IN 	STD_LOGIC_VECTOR (DATA_BUS_WIDTH - 1 DOWNTO 0);
-				RegForwarWB			: IN 	STD_LOGIC_VECTOR (DATA_BUS_WIDTH - 1 DOWNTO 0);
-				-- New inputs from piping_proccess
-				-- Register Address
-				RegDst_ctrl_i		: IN 	STD_LOGIC;
-				RegisterS_i			: IN 	STD_LOGIC_VECTOR(4 DOWNTO 0);
-				RegisterT_i			: IN 	STD_LOGIC_VECTOR(4 DOWNTO 0);
-				RegisterD_i			: IN 	STD_LOGIC_VECTOR(4 DOWNTO 0);
-				RegisterRes_o		: OUT 	STD_LOGIC_VECTOR(4 DOWNTO 0);
-				-- Passed onwards via WB --------
-				MemtOReg_ctrl_i 	: IN 	STD_LOGIC_VECTOR(1 DOWNTO 0); 
-				MemtOReg_ctrl_o 	: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0); 
-				RegWrite_ctrl_i 	: IN 	STD_LOGIC;
-				RegWrite_ctrl_o 	: OUT 	STD_LOGIC;
-				-- For Top
-				-- Non synchronics Outputs
-				curr_pc_o			: OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				curr_inst_o			: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				synch_curr_pc_o		: OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				synch_curr_inst_o	: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				-- Passed onwards via MEM --------
-				MemRead_ctrl_i 		: IN 	STD_LOGIC; 
-				MemWrite_ctrl_i		: IN 	STD_LOGIC;
-				MemRead_ctrl_o 		: OUT 	STD_LOGIC; 
-				MemWrite_ctrl_o		: OUT 	STD_LOGIC;
-				DTCM_data_o			: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH - 1 DOWNTO 0);
-				pc_plus4_o			: OUT 	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				alu_res_o 			: OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0)
+	
+	COMPONENT WRITE_BACK IS
+	PORT( 
+		ALU_Result, read_data	: IN  STD_LOGIC_VECTOR(31 DOWNTO 0);
+		PC_plus_4_shifted		: IN  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		MemtoReg, Jal			: IN  STD_LOGIC;
+		write_data 				: OUT STD_LOGIC_VECTOR(31 DOWNTO 0);
+		write_data_mux			: OUT STD_LOGIC_VECTOR(31 DOWNTO 0)
 		);
 	END COMPONENT;
----------------------------------------------------------		
-	COMPONENT Idecode IS
-		generic(
-			DATA_BUS_WIDTH : integer 	:= 32;
-			PC_WIDTH : integer 			:= 10;
-			NEXT_PC_WIDTH : integer 	:= 8
+		
+	COMPONENT ALU_CONTROL IS
+	PORT(	ALUOp 						: IN 	STD_LOGIC_VECTOR( 1 DOWNTO 0 );
+			Funct 						: IN 	STD_LOGIC_VECTOR( 5 DOWNTO 0 );
+			Opcode 						: IN 	STD_LOGIC_VECTOR( 5 DOWNTO 0 );
+			ALU_ctl 					: OUT   STD_LOGIC_VECTOR( 3 DOWNTO 0 ));
+	END COMPONENT;
+		
+	COMPONENT  ALU IS
+	PORT(	Ainput 			: IN 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			Binput 			: IN 	STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+			ALU_ctl		 	: IN 	STD_LOGIC_VECTOR( 3 DOWNTO 0 );
+			ALU_output_mux	: OUT   STD_LOGIC_VECTOR( 31 DOWNTO 0 )
+			);
+	END COMPONENT;
+		
+	COMPONENT HazardUnit IS
+	PORT( 
+		MemtoReg_EX, MemtoReg_MEM	 		 : IN STD_LOGIC;
+		WriteReg_EX, WriteReg_MEM, WriteReg_WB : IN  STD_LOGIC_VECTOR(4 DOWNTO 0);
+		RegRs_ID, RegRt_ID 					 : IN  STD_LOGIC_VECTOR(4 DOWNTO 0);
+		RegRs_EX, RegRt_EX					 : IN  STD_LOGIC_VECTOR(4 DOWNTO 0);
+		EX_RegWr, MEM_RegWr, WB_RegWr		 : IN  STD_LOGIC;
+		BranchBeq_ID, BranchBne_ID, Jump_ID	 : IN STD_LOGIC;
+		Stall_IF, Stall_ID, Flush_EX 	 	 : OUT STD_LOGIC;
+		ForwardA, ForwardB				     : OUT STD_LOGIC_VECTOR(1 DOWNTO 0);
+		ForwardA_Branch, ForwardB_Branch		     : OUT STD_LOGIC
+		);
+	END 	COMPONENT;
+-----------------------------------------------------------------------------------
 
-		);
-		PORT(	clk_i,rst_i,rst_prev_stage	: IN 	STD_LOGIC;
-				-- FOr TOP
-				curr_PC_i			: IN 	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				instruction_i 		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				----------
-				dtcm_data_rd_i 		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				alu_result_i		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				stall_i				: IN 	STD_LOGIC;
-				PC_PLUS_FOUR_i		: IN 	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				-- Forwarding inputs
-				ForwardRT_Dec_i		: IN 	STD_LOGIC;
-				ForwardRS_Dec_i		: IN 	STD_LOGIC;
-				RT_from_mem_i		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				RS_from_mem_i		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				-- New inputs from passing MUXs to other stages
-				write_reg_addr_i 	: IN	STD_LOGIC_VECTOR( 4 DOWNTO 0 );
-				write_reg_data_i	: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0 );
-				-- Inputs from control
-				-- Passed onwards via EXE --------
-				RegDst_ctrl_i		: IN 	STD_LOGIC;
-				ALUSrc_ctrl_i 		: IN 	STD_LOGIC;
-				ALUOp_ctrl_i		: IN 	STD_LOGIC_VECTOR(5 DOWNTO 0);
-				RegDst_ctrl_o		: OUT 	STD_LOGIC;
-				ALUSrc_ctrl_o 		: OUT 	STD_LOGIC;
-				ALUOp_ctrl_o		: OUT 	STD_LOGIC_VECTOR(5 DOWNTO 0);
-				-- Passed onwards via WB --------
-				MemtOReg_ctrl_i 	: IN 	STD_LOGIC_VECTOR(1 DOWNTO 0); 
-				MemtOReg_ctrl_o 	: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0); 
-				-- Passed onwards via MEM --------
-				MemRead_ctrl_i 		: IN 	STD_LOGIC; 
-				MemWrite_ctrl_i		: IN 	STD_LOGIC;
-				MemRead_ctrl_o 		: OUT 	STD_LOGIC; 
-				MemWrite_ctrl_o		: OUT 	STD_LOGIC;
-				-- END --------------------------
-				RegWrite_ctrl_i 	: IN 	STD_LOGIC;
-				RegWrite_ctrl_o 	: OUT 	STD_LOGIC;
-				RegWrite_WB_i		: IN 	STD_LOGIC;
-				Branch_ctrl_i 		: IN 	STD_LOGIC_VECTOR(1 DOWNTO 0);
-				jump_i				: IN 	STD_LOGIC_VECTOR(1 DOWNTO 0);
-				-- Outputs
-				-- From ID back to Ifetch
-				pc_select_o			: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0);
-				JumpAddress_o   	: OUT 	STD_LOGIC_VECTOR(NEXT_PC_WIDTH-1 DOWNTO 0);
-				BranchAddress_o 	: OUT 	STD_LOGIC_VECTOR(NEXT_PC_WIDTH-1 DOWNTO 0);
-				-- Data Out From ID onwards
-				read_data1_o		: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				read_data2_o		: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				-- For TOP
-				-- Non synchronics Outputs
-				curr_pc_o			: OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				curr_inst_o			: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				synch_curr_pc_o		: OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				synch_curr_inst_o	: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-				-- Instruction onwards
-				RegisterS_o			: OUT 	STD_LOGIC_VECTOR(4 DOWNTO 0);
-				RegisterT_o			: OUT 	STD_LOGIC_VECTOR(4 DOWNTO 0);
-				RegisterD_o			: OUT 	STD_LOGIC_VECTOR(4 DOWNTO 0);
-				PC_PLUS_FOUR_o		: OUT 	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-				sign_extend_o 		: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0)		 
+--------------------------- GPIO ---------------------------
+	COMPONENT InputPeripheral IS
+		GENERIC(DataBusSize	: integer := 32);
+		PORT( 
+			MemRead		: IN	STD_LOGIC;
+			ChipSelect	: IN 	STD_LOGIC;
+			INTA		: IN	STD_LOGIC;
+			Data		: OUT	STD_LOGIC_VECTOR(DataBusSize-1 DOWNTO 0);
+			GPInput		: IN	STD_LOGIC_VECTOR(7 DOWNTO 0)
+			);
+	END COMPONENT;
+
+	COMPONENT OutputPeripheral IS
+		GENERIC (SevenSeg	: BOOLEAN := TRUE; 
+				 IOSize		: INTEGER := 7); -- 7 WHEN HEX, 8 WHEN LEDs
+		PORT( 
+			MemRead		: IN	STD_LOGIC;
+			clock		: IN 	STD_LOGIC;
+			reset		: IN 	STD_LOGIC;
+			MemWrite	: IN	STD_LOGIC;
+			ChipSelect	: IN 	STD_LOGIC;
+			Data		: INOUT	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			GPOutput	: OUT	STD_LOGIC_VECTOR(IOSize-1 DOWNTO 0)
+			);
+	END COMPONENT;
+
+	COMPONENT OptAddrDecoder IS
+		PORT( 
+			reset						: IN	STD_LOGIC;
+			AddressBus					: IN	STD_LOGIC_VECTOR(11 DOWNTO 0);
+			CS_LEDR, CS_SW, CS_KEY		: OUT	STD_LOGIC;
+			CS_HEX0_HEX1, CS_HEX2_HEX3, CS_HEX4_HEX5	: OUT	STD_LOGIC;
+			-- FIR Filter chip selects
+			CS_FIRCTL, CS_FIRIN, CS_FIROUT	: OUT	STD_LOGIC;
+			CS_COEF3_0, CS_COEF7_4		: OUT	STD_LOGIC
 		);
 	END COMPONENT;
----------------------------------------------------------		
-	COMPONENT Ifetch IS
-		generic(
-			WORD_GRANULARITY : boolean 	:= False;
-			DATA_BUS_WIDTH : integer 	:= 32;
-			PC_WIDTH : integer 		:= 10;
-			NEXT_PC_WIDTH : integer 	:= 8; -- NEXT_PC_WIDTH = PC_WIDTH-2
-			ITCM_ADDR_WIDTH : integer 	:= 8;
-			WORDS_NUM : integer 		:= 256;
-			INST_CNT_WIDTH : integer 	:= 16
+
+	COMPONENT SevenSegDecoder IS
+	  GENERIC (SegmentSize	: integer := 7);
+	  PORT (data		: in STD_LOGIC_VECTOR (3 DOWNTO 0);
+			seg   		: out STD_LOGIC_VECTOR (SegmentSize-1 downto 0));
+	END COMPONENT;
+
+	COMPONENT GPIO IS
+		GENERIC(CtrlBusSize	: integer := 8;
+				AddrBusSize	: integer := 32;
+				DataBusSize	: integer := 32
 		);
-		PORT(	
-			clk_i, rst_i 	: IN 	STD_LOGIC;
-			rst_o		: OUT 	STD_LOGIC;
-			-- new inputs from pipelining
-			flush_i			: IN 	STD_LOGIC;
-			stall_i			: IN 	STD_LOGIC;
-			pc_select_i		: IN 	STD_LOGIC_VECTOR(1 DOWNTO 0);
-			JumpAddress_i   : IN 	STD_LOGIC_VECTOR(NEXT_PC_WIDTH-1 DOWNTO 0);
-			BranchAddress_i : IN 	STD_LOGIC_VECTOR(NEXT_PC_WIDTH-1 DOWNTO 0);
-			-- Outputs
-			pc_o			: OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			-- Non synchronics -------------------
-			curr_pc_o		: OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			curr_inst_o		: OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			--------------------------------------
-			pc_plus4_o		: OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-			instruction_o 	: OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			inst_cnt_o 		: OUT	STD_LOGIC_VECTOR(INST_CNT_WIDTH-1 DOWNTO 0)	
+		PORT( 
+			-- ControlBus	: IN	STD_LOGIC_VECTOR(CtrlBusSize-1 DOWNTO 0);
+			INTA						: IN	STD_LOGIC;
+			MemReadBus					: IN 	STD_LOGIC;
+			clock						: IN 	STD_LOGIC;
+			reset						: IN 	STD_LOGIC;
+			MemWriteBus					: IN 	STD_LOGIC;
+			AddressBus					: IN	STD_LOGIC_VECTOR(AddrBusSize-1 DOWNTO 0);
+			DataBus						: INOUT	STD_LOGIC_VECTOR(DataBusSize-1 DOWNTO 0);
+			HEX0, HEX1					: OUT	STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX2, HEX3					: OUT	STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX4, HEX5					: OUT	STD_LOGIC_VECTOR(6 DOWNTO 0);
+			LEDR						: OUT	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			Switches					: IN	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			CS_LEDR, CS_SW				: IN 	STD_LOGIC;
+			CS_HEX0_HEX1, CS_HEX2_HEX3, CS_HEX4_HEX5	: IN 	STD_LOGIC
 		);
 	END COMPONENT;
----------------------------------------------------------
-	COMPONENT Shifter IS 
+------------------ BASIC TIMER ---------------------------
+	COMPONENT BTIMER IS
+	GENERIC (
+		CLOCK_DIV_WIDTH : integer := 4;  
+		TIMER_WIDTH     : integer := 32   
+	);
+	PORT(
+		mclk_i : IN STD_LOGIC;                                    
+		rst_i : IN STD_LOGIC;                                      
+		BTCTL : IN STD_LOGIC_VECTOR(7 DOWNTO 0);                  
+		BTCCR0 : IN STD_LOGIC_VECTOR(TIMER_WIDTH-1 DOWNTO 0);     
+		BTCCR1 : IN STD_LOGIC_VECTOR(TIMER_WIDTH-1 DOWNTO 0);     
+		BTCNT : INOUT STD_LOGIC_VECTOR(TIMER_WIDTH-1 DOWNTO 0);   
+
+		PWMout : OUT STD_LOGIC;                                    
+		BTIFG : OUT STD_LOGIC                                      
+		);
+	END COMPONENT;
+
+	------------------ FIR FILTER ---------------------------
+
+	COMPONENT FIR_FILTER IS
 		generic (
-			n : integer := 8;
-			k : integer := 3;
-			m : integer := 4
+		  DATA_WIDTH : integer := 24;   -- UQ24.0
+		  COEF_WIDTH : integer := 8;    -- UQ0.8
+		  M_TAPS     : integer := 8;
+		  Q_PARAM    : integer := 8;    -- fractional bits (coeff Q)
+		  FIFO_DEPTH : integer := 16
 		);
 		port (
-			x,y           : in  std_logic_vector(n-1 downto 0);
-			ALUFN       : in std_logic_vector(2 downto 0);
-			res : out std_logic_vector(n-1 downto 0);
-			cout: out std_logic
+		  FIRCLK   : in  std_logic;
+		  FIFOCLK  : in  std_logic;
+	  
+		  -- Control Register Interface
+		  FIRCTL        : in  std_logic_vector(7 downto 0);  -- sw writes
+		  FIRCTL_STATUS : out std_logic_vector(7 downto 0);  -- sw reads
+	  
+		  -- Data
+		  FIRIN   : in  std_logic_vector(31 downto 0);  -- {0@8, x(23:0)}
+		  FIROUT  : out std_logic_vector(31 downto 0);  -- {0@8, y(23:0)}
+	  
+		  -- Interrupt (new output ready pulse in FIRCLK domain)
+		  FIRIFG  : out std_logic;
+	  
+		  -- Coefficients (UQ0.8)
+		  COEF0 : in std_logic_vector(COEF_WIDTH-1 downto 0);
+		  COEF1 : in std_logic_vector(COEF_WIDTH-1 downto 0);
+		  COEF2 : in std_logic_vector(COEF_WIDTH-1 downto 0);
+		  COEF3 : in std_logic_vector(COEF_WIDTH-1 downto 0);
+		  COEF4 : in std_logic_vector(COEF_WIDTH-1 downto 0);
+		  COEF5 : in std_logic_vector(COEF_WIDTH-1 downto 0);
+		  COEF6 : in std_logic_vector(COEF_WIDTH-1 downto 0);
+		  COEF7 : in std_logic_vector(COEF_WIDTH-1 downto 0);
+		  CS_FIROUT : in std_logic;
+		          -- DEBUG OUTPUTS - Add these new signals
+		-- FIFO Status
+		DEBUG_FIFO_COUNT    : out std_logic_vector(4 downto 0);    -- FIFO count (0-16)
+		DEBUG_FIFO_EMPTY   : out std_logic;                        -- FIFO empty flag
+		DEBUG_FIFO_FULL    : out std_logic;                        -- FIFO full flag
+		DEBUG_W_PTR        : out std_logic_vector(3 downto 0);     -- Write pointer
+		DEBUG_R_PTR        : out std_logic_vector(3 downto 0);     -- Read pointer
+		
+		-- Handshake Status
+		DEBUG_PENDING_REQ  : out std_logic;                        -- Pending request flag
+		DEBUG_REQ_TOG_FIR : out std_logic;                         -- Request toggle from FIR
+		DEBUG_ACK_TOG_FIFO: out std_logic;                         -- Ack toggle to FIR
+		DEBUG_OUTSTANDING  : out std_logic;                         -- Outstanding request flag
+		
+		-- FIR Processing Status
+		DEBUG_SAMPLE_VALID : out std_logic;                         -- Sample valid pulse
+		DEBUG_Y_VALID_R    : out std_logic;                         -- Output valid flag
+		DEBUG_FIFO_DATA    : out std_logic_vector(23 downto 0);    -- Current FIFO data being processed
+		DEBUG_Y_OUTPUT     : out std_logic_vector(23 downto 0)     -- Current FIR output
+		);
+	  END COMPONENT;
+
+------------------ Interrupt Controller --------------------
+	COMPONENT INTERRUPT IS
+	GENERIC(DataBusSize	: integer := 32;
+			AddrBusSize	: integer := 12;
+			IrqSize	    : integer := 8;
+			RegSize		: integer := 8
+			);
+	PORT( 
+			reset		: IN	STD_LOGIC;
+			clock		: IN	STD_LOGIC;
+			MemReadBus	: IN	STD_LOGIC;
+			MemWriteBus	: IN	STD_LOGIC;
+			AddressBus	: IN	STD_LOGIC_VECTOR(AddrBusSize-1 DOWNTO 0);
+			DataBus		: INOUT	STD_LOGIC_VECTOR(DataBusSize-1 DOWNTO 0);
+			IntrSrc		: IN	STD_LOGIC_VECTOR(IrqSize-1 DOWNTO 0); -- IRQ
+			ChipSelect	: IN	STD_LOGIC;
+			INTR		: OUT	STD_LOGIC;
+			INTA		: IN	STD_LOGIC;
+			IRQ_OUT		: OUT   STD_LOGIC_VECTOR(IrqSize-1 DOWNTO 0);
+			INTR_Active	: OUT	STD_LOGIC;
+			CLR_IRQ_OUT	: OUT	STD_LOGIC_VECTOR(7 DOWNTO 0);
+			IFG_STATUS_ERROR : IN STD_LOGIC;
+			GIE			: IN	STD_LOGIC
+		);
+	END COMPONENT;
+
+------------------ UART --------------------
+	COMPONENT USART is
+		GENERIC(DataBusSize		: integer := 32;
+				AddrBusSize		: integer := 12;
+				IrqSize	    	: integer := 8;
+				RegSize			: integer := 8
+				);
+		PORT(
+				clock, reset      	: in  	std_logic;
+				RXIFG 		: out  	std_logic := '0';
+				TXIFG		: out	std_logic := '0';
+				B_RX		: in	std_logic := '1';
+				B_TX     	: out 	std_logic := '1';
+				IFG_STATUS_ERROR	:	out	std_logic;
+				AddressBus	: IN	STD_LOGIC_VECTOR(AddrBusSize-1 DOWNTO 0);	
+				DataBus		: INOUT	STD_LOGIC_VECTOR(DataBusSize-1 DOWNTO 0);
+				MemReadBus	: IN	STD_LOGIC;
+				MemWriteBus	: IN	STD_LOGIC
+			);
+	end COMPONENT;
+	
+	COMPONENT UART_RX is
+		port (
+			i_Clk       : in 	std_logic;
+			i_RX_Serial : in  	std_logic := '1';
+			o_RX_DV     : out	std_logic;
+			o_RX_Byte   : out 	std_logic_vector(7 downto 0);
+			-- UCTL register bits
+			SWRST		: in	std_logic := '0';
+			PENA		: in	std_logic := '0';
+			PEV			: in	std_logic := '0';
+			FE			: out	std_logic := '0';
+			PE			: out	std_logic := '0';
+			OE			: out	std_logic := '0';
+			BUSY		: out	std_logic := '0';
+			g_CLKS_PER_BIT	: IN INTEGER
 		);
 	end COMPONENT;
----------------------------------------------------------
-	COMPONENT PLL port(
-	    areset		: IN STD_LOGIC  := '0';
-		inclk0		: IN STD_LOGIC  := '0';
-		c0     		: OUT STD_LOGIC ;
-		locked		: OUT STD_LOGIC );
-    END COMPONENT;
----------------------------------------------------------	
-	COMPONENT ForwordingUnit IS
-	PORT( 
-			clk					: IN STD_LOGIC;
-			RegisterRdMEM		: IN STD_LOGIC_VECTOR(4 DOWNTO 0);
-			RegisterRdWB		: IN STD_LOGIC_VECTOR(4 DOWNTO 0);
-			RegisterRsEX		: IN STD_LOGIC_VECTOR(4 DOWNTO 0);
-			RegisterRtEX		: IN STD_LOGIC_VECTOR(4 DOWNTO 0);
-			RegisterRsDEC		: IN STD_LOGIC_VECTOR(4 DOWNTO 0);
-			RegisterRtDEC		: IN STD_LOGIC_VECTOR(4 DOWNTO 0);
-			RegisteWriteMem		: IN STD_LOGIC;
-			RegisteWriteWB		: IN STD_LOGIC;
-			ForwardRS_Exe		: OUT STD_LOGIC_VECTOR(1 DOWNTO 0);
-			ForwardRT_Exe		: OUT STD_LOGIC_VECTOR(1 DOWNTO 0);
-			ForwardRT_Dec		: OUT STD_LOGIC;
-			ForwardRS_Dec		: OUT STD_LOGIC
+
+	COMPONENT UART_TX is
+		port (
+			i_Clk       : in  std_logic;
+			i_TX_DV     : in  std_logic;
+			i_TX_Byte   : in  std_logic_vector(7 downto 0);
+			o_TX_Active : out std_logic; -- BUSY
+			o_TX_Serial : out std_logic;
+			o_TX_Done   : out std_logic;
+			SWRST		: in  std_logic := '0'; -- Software reset enable
+			PENA		: in  std_logic := '0'; -- Parity enable
+			g_CLKS_PER_BIT	: IN INTEGER
 		);
+	end COMPONENT;
+
+
+	COMPONENT CLOCK_DIVIDER IS
+    GENERIC(
+        DIVIDE_FACTOR : INTEGER := 7500  -- Default: 75MHz -> 10KHz
+    );
+    PORT( 
+        clk_in      : IN  STD_LOGIC;    -- Input clock (PLL output)
+        reset       : IN  STD_LOGIC;    -- Reset (active high)
+        clk_out     : OUT STD_LOGIC     -- Output divided clock
+    );
 	END COMPONENT;
-----------------------------------------------------------
-	COMPONENT Hazard_Detection_unit IS
-	PORT( 	
-			RegRtEx							: 	IN 		STD_LOGIC_VECTOR(4 DOWNTO 0);
-			RegRtID							: 	IN 		STD_LOGIC_VECTOR(4 DOWNTO 0);
-			RegRdEx							: 	IN 		STD_LOGIC_VECTOR(4 DOWNTO 0);
-			RegRsID							: 	IN 		STD_LOGIC_VECTOR(4 DOWNTO 0);
-			Reg_writeEx						:	IN 		STD_LOGIC;
-			Branch_cond						: 	IN 		STD_LOGIC;
-			RegDstEx						: 	IN 		STD_LOGIC;  -- NEW: 1=R-type (rd dest), 0=I-type (rt dest)
-			stall_cnt						: 	OUT 	STD_LOGIC;
-			stall_pc						: 	OUT   	STD_LOGIC
-		);
-	END COMPONENT;
------------------------------------------------------------
 
 end aux_package;
 

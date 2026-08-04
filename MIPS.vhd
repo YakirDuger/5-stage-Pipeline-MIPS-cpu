@@ -1,701 +1,700 @@
----------------------------------------------------------------------------------------------
--- Copyright 2025 Hananya Ribo 
--- Advanced CPU architecture and Hardware Accelerators Lab 361-1-4693 BGU
----------------------------------------------------------------------------------------------
--- Top Level Structural Model for MIPS Processor Core
--- Reorganized for better readability and maintainability
----------------------------------------------------------------------------------------------
-
+--------------- Top Level Structural Model for MIPS Processor Core
 LIBRARY IEEE;
 USE IEEE.STD_LOGIC_1164.ALL;
 USE IEEE.STD_LOGIC_ARITH.ALL;
-USE ieee.std_logic_unsigned.all;
-USE work.cond_comilation_package.all;
-USE work.aux_package.all;
-
+USE IEEE.STD_LOGIC_SIGNED.ALL;
+USE work.cond_compilation_package.all;
+USE work.aux_package.ALL;
+-------------- ENTITY --------------------
 ENTITY MIPS IS
-    GENERIC( 
-        WORD_GRANULARITY    : boolean   := G_WORD_GRANULARITY;
-        MODELSIM           : integer    := G_MODELSIM;
-        DATA_BUS_WIDTH     : integer    := 32;
-        ITCM_ADDR_WIDTH    : integer    := G_ADDRWIDTH;
-        DTCM_ADDR_WIDTH    : integer    := G_ADDRWIDTH;
-        PC_WIDTH           : integer    := 10;
-        NEXT_PC_WIDTH      : integer    := 8;
-        FUNCT_WIDTH        : integer    := 6;
-        DATA_WORDS_NUM     : integer    := G_DATA_WORDS_NUM;
-        CLK_CNT_WIDTH      : integer    := 16;
-        INST_CNT_WIDTH     : integer    := 16
-    );
-    PORT(	
-        -- Clock and Reset
-        rst_i                   : IN  STD_LOGIC;
-        clk_i                   : IN  STD_LOGIC; 
-        PBADD_i                 : IN  STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0); -- Breakpoint address
-        
-        -- Debug Output Signals for SignalTap
-        pc_o                    : OUT STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-        alu_result_o            : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        read_data1_o            : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        read_data2_o            : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        write_data_o            : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        instruction_top_o       : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        Branch_ctrl_o           : OUT STD_LOGIC_VECTOR(1 DOWNTO 0);
-        Zero_o                  : OUT STD_LOGIC; 
-        MemWrite_ctrl_o         : OUT STD_LOGIC;
-        RegWrite_ctrl_o         : OUT STD_LOGIC;
-        
-        -- Pipeline Stage Outputs for TOP entity
-        IF_PC_o                 : OUT STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-        ID_PC_o                 : OUT STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-        EX_PC_o                 : OUT STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-        MEM_PC_o                : OUT STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-        WB_PC_o                 : OUT STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-        IF_inst_o               : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        ID_inst_o               : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        EX_inst_o               : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        MEM_inst_o              : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        WB_inst_o               : OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-        
-        -- Performance Counters
-        STRIGGER_o              : OUT STD_LOGIC;
-        FH_cnt_o                : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
-        ST_cnt_o                : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
-        mclk_cnt_o              : OUT STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0);
-        inst_cnt_o              : OUT STD_LOGIC_VECTOR(INST_CNT_WIDTH-1 DOWNTO 0)
-    );		
-END MIPS;
-
--------------------------------------------------------------------------------------
+	GENERIC (	MemWidth 	: INTEGER := 8;
+				SIM 		: BOOLEAN := FALSE;
+				CtrlBusSize	: integer := 8;
+				AddrBusSize	: integer := 32;
+				DataBusSize	: integer := 32;
+				IOSize		: integer := 8
+			 );
+	PORT( reset, clock, ena	: IN 	STD_LOGIC; 
+		-- Output important signals to pins for easy display in Simulator
+		PC					: OUT  	STD_LOGIC_VECTOR(9 DOWNTO 0);
+		CLKCNT				: OUT  	STD_LOGIC_VECTOR(15 DOWNTO 0);
+		STCNT				: OUT  	STD_LOGIC_VECTOR(7 DOWNTO 0);
+		FHCNT				: OUT  	STD_LOGIC_VECTOR(7 DOWNTO 0);
+		BPADD				: IN  	STD_LOGIC_VECTOR(7 DOWNTO 0);
+		ST_trigger			: OUT	STD_LOGIC;
+		ControlBus			: OUT	STD_LOGIC_VECTOR(CtrlBusSize-1 DOWNTO 0);
+		MemReadBus			: OUT 	STD_LOGIC;
+		MemWriteBus			: OUT 	STD_LOGIC;
+		AddressBus			: OUT	STD_LOGIC_VECTOR(AddrBusSize-1 DOWNTO 0);
+		GIE					: OUT	STD_LOGIC;
+		INTR				: IN	STD_LOGIC;
+		INTA				: OUT	STD_LOGIC;
+		INTR_Active			: IN	STD_LOGIC;
+		CLR_IRQ				: IN	STD_LOGIC_VECTOR(7 DOWNTO 0);
+		DataBus				: INOUT	STD_LOGIC_VECTOR(DataBusSize-1 DOWNTO 0);
+		FIROUT				: IN	STD_LOGIC_VECTOR(31 DOWNTO 0);	
+		BTCNT				: IN	STD_LOGIC_VECTOR(31 DOWNTO 0);
+		CS_FIROUT			: IN	STD_LOGIC;
+		COEF3_0				: IN	STD_LOGIC_VECTOR(31 DOWNTO 0);
+		COEF7_4				: IN	STD_LOGIC_VECTOR(31 DOWNTO 0);
+		CS_COEF3_0			: IN	STD_LOGIC;
+		CS_COEF7_4			: IN	STD_LOGIC;
+		FIRCTL_STATUS		: IN	STD_LOGIC_VECTOR(7 DOWNTO 0);
+		CS_FIRCTL			: IN	STD_LOGIC
+		);
+END 	MIPS;
+------------ ARCHITECTURE ----------------
 ARCHITECTURE structure OF MIPS IS
+	---- MCU BUS ----
+	SIGNAL DataInputBus		: STD_LOGIC_VECTOR(DataBusSize-1 DOWNTO 0);
+	
+	---- FPGA OR ModelSim Signals ----
+	SIGNAL dMemAddr 		: STD_LOGIC_VECTOR(7 DOWNTO 0);
 
--------------------------------------------------------------------------------------
--- INTERNAL CLOCK SIGNALS
--------------------------------------------------------------------------------------
-    SIGNAL master_clk                   : STD_LOGIC;
-    SIGNAL master_clk_cnt               : STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0);
+	-- declare signals used to connect VHDL components
+	SIGNAL PC_plus_4 		: STD_LOGIC_VECTOR( 9 DOWNTO 0 );
+	SIGNAL read_data_1 		: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL read_data_2 		: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Sign_Extend 		: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Add_Result 		: STD_LOGIC_VECTOR( 7 DOWNTO 0 );
+	SIGNAL ALU_Result 		: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL read_data 		: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL ALUSrc 			: STD_LOGIC;
+	SIGNAL RegDst 			: STD_LOGIC;
+	SIGNAL Regwrite 		: STD_LOGIC;
+	SIGNAL Zero 			: STD_LOGIC;
+	SIGNAL MemWrite 		: STD_LOGIC;
+	SIGNAL MemtoReg 		: STD_LOGIC;
+	SIGNAL MemRead 			: STD_LOGIC;
+	SIGNAL ALUop 			: STD_LOGIC_VECTOR(  1 DOWNTO 0 );
+	SIGNAL Instruction		: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+-------------- Signals To support CPI/IPC calculation and break point debug ability --------------------------------
+	SIGNAL BPADD_ena		: STD_LOGIC;
+	SIGNAL Run				: STD_LOGIC;
+	SIGNAL PC_BPADD			: STD_LOGIC_VECTOR( 9 DOWNTO 0 );
+	---------------- Pipeline Registers --------------------------
+	
+	------ Control Registers ------
+	-- WB -- 
+	SIGNAL MemtoReg_WB, MemtoReg_MEM, MemtoReg_EX, MemtoReg_ID 	: STD_LOGIC;
+	SIGNAL RegWrite_WB, RegWrite_MEM, RegWrite_EX, RegWrite_ID 	: STD_LOGIC;
+	SIGNAL Jal_WB, Jal_MEM, Jal_EX, Jal_ID						: STD_LOGIC;
+	
+	-- MEM --
+	SIGNAL Zero_MEM, Zero_EX 						: STD_LOGIC;
+	SIGNAL Branch_MEM, Branch_EX, Branch_ID 		: STD_LOGIC;
+	SIGNAL MemWrite_MEM, MemWrite_EX, MemWrite_ID 	: STD_LOGIC;
+	SIGNAL MemRead_MEM, MemRead_EX, MemRead_ID 		: STD_LOGIC;
+	SIGNAL BranchBeq_MEM, BranchBeq_EX, BranchBeq_ID: STD_LOGIC;
+	SIGNAL BranchBne_MEM, BranchBne_EX, BranchBne_ID: STD_LOGIC;
+	SIGNAL Jump_MEM, Jump_EX, Jump_ID				: STD_LOGIC;
+	
+	-- Forwarding Unit
+	SIGNAL ForwardA, ForwardB						: STD_LOGIC_VECTOR(1 DOWNTO 0);
+	SIGNAL ForwardA_ID, ForwardB_ID					: STD_LOGIC; -- Branch Forwarding
+	
+	-- EXEC -- 
+	SIGNAL RegDst_EX, RegDst_ID 					: STD_LOGIC_VECTOR(1 DOWNTO 0);
+	SIGNAL ALUSrc_EX, ALUSrc_ID 					: STD_LOGIC;
+	SIGNAL ALUOp_EX, ALUOp_ID 						: STD_LOGIC_VECTOR(1 DOWNTO 0);
+	
+	-- Hazard Unit -- Stall AND Flush
+	SIGNAL Stall_IF, Stall_ID, Flush_EX				: STD_LOGIC;
+	
+	-- Instruction Decode --
+	SIGNAL PCSrc_ID									: STD_LOGIC_VECTOR(1 DOWNTO 0);
+	
+	--------------------------------------------------------
+	
+	-------- States Registers ------
+	-- Instruction Fetch
+	SIGNAL PC_plus_4_IF		: STD_LOGIC_VECTOR(9 DOWNTO 0);
+	SIGNAL IR_IF		    : STD_LOGIC_VECTOR( 31 DOWNTO 0 );
 
--------------------------------------------------------------------------------------
--- INSTRUCTION FETCH (IF) STAGE SIGNALS
--------------------------------------------------------------------------------------
-    SIGNAL if_pc_debug                  : STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-    SIGNAL if_pc_plus4                  : STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-    SIGNAL if_instruction               : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL if_instruction_count         : STD_LOGIC_VECTOR(INST_CNT_WIDTH-1 DOWNTO 0);
-    SIGNAL if_curr_pc_to_id             : STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-    SIGNAL if_reset_to_id               : STD_LOGIC;
+	-- Instruction Decode
+	SIGNAL PC_plus_4_ID				     		 				: STD_LOGIC_VECTOR(9 DOWNTO 0);
+	SIGNAL IR_ID		    			  		 				: STD_LOGIC_VECTOR( 31 DOWNTO 0 ); 
+	SIGNAL read_data_1_ID, read_data_2_ID 		 				: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Sign_extend_ID				 		 				: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Wr_reg_addr_0_ID, Wr_reg_addr_1_ID	 				: STD_LOGIC_VECTOR( 4 DOWNTO 0 );
+	SIGNAL PCBranch_addr_ID										: STD_LOGIC_VECTOR(7 DOWNTO 0);
+	SIGNAL JumpAddr_ID											: STD_LOGIC_VECTOR(7 DOWNTO 0);
+	
+	-- Execute                                                  
+	SIGNAL PC_plus_4_EX				      						: STD_LOGIC_VECTOR(9 DOWNTO 0);
+	SIGNAL IR_EX		    			  		 				: STD_LOGIC_VECTOR( 31 DOWNTO 0 ); 
+	SIGNAL read_data_1_EX, read_data_2_EX 						: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Sign_extend_EX				  		 				: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Wr_reg_addr_0_EX, Wr_reg_addr_1_EX, Wr_reg_addr_EX	: STD_LOGIC_VECTOR( 4 DOWNTO 0 );
+	SIGNAL write_data_EX										: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Add_Result_EX										: STD_LOGIC_VECTOR( 7 DOWNTO 0 );
+	SIGNAL ALU_Result_EX					   				    : STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Opcode_EX											: STD_LOGIC_VECTOR( 5 DOWNTO 0 );
 
--------------------------------------------------------------------------------------
--- INSTRUCTION DECODE (ID) STAGE SIGNALS
--------------------------------------------------------------------------------------
-    -- Register File Outputs
-    SIGNAL id_read_data1                : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL id_read_data2                : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL id_sign_extend               : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    
-    -- Control Signals from Control Unit
-    SIGNAL ctrl_reg_dst                 : STD_LOGIC;
-    SIGNAL ctrl_alu_src                 : STD_LOGIC;
-    SIGNAL ctrl_mem_to_reg              : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    SIGNAL ctrl_reg_write               : STD_LOGIC;
-    SIGNAL ctrl_mem_read                : STD_LOGIC;
-    SIGNAL ctrl_mem_write               : STD_LOGIC;
-    SIGNAL ctrl_branch                  : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    SIGNAL ctrl_alu_op                  : STD_LOGIC_VECTOR(5 DOWNTO 0);
-    SIGNAL ctrl_jump                    : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    
-    -- Pipeline Control Signals ID to EX
-    SIGNAL id_to_ex_reg_dst             : STD_LOGIC;
-    SIGNAL id_to_ex_alu_src             : STD_LOGIC;
-    SIGNAL id_to_ex_alu_op              : STD_LOGIC_VECTOR(5 DOWNTO 0);
-    SIGNAL id_to_ex_mem_to_reg          : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    SIGNAL id_to_ex_mem_read            : STD_LOGIC;
-    SIGNAL id_to_ex_mem_write           : STD_LOGIC;
-    SIGNAL id_to_ex_reg_write           : STD_LOGIC;
-    
-    -- Register Addresses
-    SIGNAL id_to_ex_reg_s               : STD_LOGIC_VECTOR(4 DOWNTO 0);
-    SIGNAL id_to_ex_reg_t               : STD_LOGIC_VECTOR(4 DOWNTO 0);
-    SIGNAL id_to_ex_reg_d               : STD_LOGIC_VECTOR(4 DOWNTO 0);
-    
-    -- Branch and Jump Control
-    SIGNAL id_pc_select                 : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    SIGNAL id_jump_address              : STD_LOGIC_VECTOR(NEXT_PC_WIDTH-1 DOWNTO 0);
-    SIGNAL id_branch_address            : STD_LOGIC_VECTOR(NEXT_PC_WIDTH-1 DOWNTO 0);
-    
-    -- Pipeline Registers
-    SIGNAL id_to_ex_pc_plus4            : STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-    SIGNAL id_curr_pc_to_ex             : STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-    SIGNAL id_curr_inst_to_ex           : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-
--------------------------------------------------------------------------------------
--- EXECUTE (EX) STAGE SIGNALS
--------------------------------------------------------------------------------------
-    SIGNAL ex_alu_result                : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL ex_zero_flag                 : STD_LOGIC;
-    SIGNAL ex_write_reg_addr            : STD_LOGIC_VECTOR(4 DOWNTO 0);
-    SIGNAL ex_dtcm_write_data           : STD_LOGIC_VECTOR(31 DOWNTO 0);
-    
-    -- Pipeline Control Signals EX to MEM
-    SIGNAL ex_to_mem_mem_to_reg         : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    SIGNAL ex_to_mem_mem_read           : STD_LOGIC;
-    SIGNAL ex_to_mem_mem_write          : STD_LOGIC;
-    SIGNAL ex_to_mem_reg_write          : STD_LOGIC;
-    
-    -- Pipeline Registers
-    SIGNAL ex_to_mem_pc_plus4           : STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-    SIGNAL ex_curr_pc_to_mem            : STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-    SIGNAL ex_curr_inst_to_mem          : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-
--------------------------------------------------------------------------------------
--- MEMORY (MEM) STAGE SIGNALS
--------------------------------------------------------------------------------------
-    SIGNAL mem_dtcm_read_data           : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL mem_dtcm_read_data_async     : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL mem_alu_result               : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL mem_write_reg_addr           : STD_LOGIC_VECTOR(4 DOWNTO 0);
-    
-    -- Pipeline Control Signals MEM to WB
-    SIGNAL mem_to_wb_mem_to_reg         : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    SIGNAL mem_to_wb_reg_write          : STD_LOGIC;
-    
-    -- Pipeline Registers
-    SIGNAL mem_to_wb_pc_plus4           : STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-    SIGNAL mem_curr_pc_to_wb            : STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-    SIGNAL mem_curr_inst_to_wb          : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-
--------------------------------------------------------------------------------------
--- WRITE BACK (WB) STAGE SIGNALS
--------------------------------------------------------------------------------------
-    SIGNAL wb_write_reg_data            : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL wb_write_reg_addr_mux        : STD_LOGIC_VECTOR(4 DOWNTO 0); -- For JAL instruction
-    SIGNAL wb_alu_result_feedback       : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL wb_dtcm_data_feedback        : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-
--------------------------------------------------------------------------------------
--- HAZARD DETECTION AND FORWARDING SIGNALS
--------------------------------------------------------------------------------------
-    SIGNAL hazard_stall_pc              : STD_LOGIC;
-    SIGNAL hazard_stall_cnt             : STD_LOGIC;
-    SIGNAL hazard_branch_condition      : STD_LOGIC;
-    
-    -- Forwarding Control Signals
-    SIGNAL forward_rs_to_ex             : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    SIGNAL forward_rt_to_ex             : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    SIGNAL forward_rt_to_id             : STD_LOGIC;
-    SIGNAL forward_rs_to_id             : STD_LOGIC;
-    SIGNAL forward_mem_to_ex_mux        : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-
--------------------------------------------------------------------------------------
--- BREAKPOINT AND CONTROL SIGNALS
--------------------------------------------------------------------------------------
-    SIGNAL breakpoint_pc                : STD_LOGIC_VECTOR(9 DOWNTO 0);
-    SIGNAL program_run_enable           : STD_LOGIC := '0';
-    SIGNAL stall_or_run_control         : STD_LOGIC := '0';
-    SIGNAL flush_pipeline               : STD_LOGIC := '0';
-
--------------------------------------------------------------------------------------
--- PERFORMANCE COUNTERS
--------------------------------------------------------------------------------------
-    SIGNAL perf_stall_count             : STD_LOGIC_VECTOR(7 DOWNTO 0);
-    SIGNAL perf_flush_count             : STD_LOGIC_VECTOR(7 DOWNTO 0);
-    SIGNAL perf_inst_count              : STD_LOGIC_VECTOR(INST_CNT_WIDTH-1 DOWNTO 0);
-    SIGNAL flush_pipeline_prev          : STD_LOGIC;  -- Track previous flush state for edge detection
-
--------------------------------------------------------------------------------------
--- LEGACY SIGNALS (for compatibility)
--------------------------------------------------------------------------------------
-    SIGNAL instruction_w                : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL read_data1_w                 : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL read_data2_w                 : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL alu_result_w                 : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL dtcm_data_rd_w               : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-    SIGNAL branch_w                     : STD_LOGIC_VECTOR(1 DOWNTO 0);
-    SIGNAL zero_w                       : STD_LOGIC;
-    SIGNAL reg_write_w                  : STD_LOGIC;
-    SIGNAL mem_write_w                  : STD_LOGIC;
-    SIGNAL MemtoReg_w                   : STD_LOGIC_VECTOR(1 DOWNTO 0);
+	-- Memory     
+	SIGNAL PC_plus_4_MEM			      						: STD_LOGIC_VECTOR(9 DOWNTO 0);	
+	SIGNAL IR_MEM		    			  		 				: STD_LOGIC_VECTOR( 31 DOWNTO 0 ); 
+	SIGNAL Add_Result_MEM										: STD_LOGIC_VECTOR( 7 DOWNTO 0 );
+	SIGNAL ALU_Result_MEM										: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL write_data_MEM, read_data_MEM						: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Wr_reg_addr_MEM										: STD_LOGIC_VECTOR( 4 DOWNTO 0 );									    
+	SIGNAL JumpAddr_MEM											: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	
+	-- WriteBack
+	SIGNAL PC_plus_4_WB				      						: STD_LOGIC_VECTOR(9 DOWNTO 0);
+	SIGNAL read_data_WB											: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL ALU_Result_WB										: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL Wr_reg_addr_WB										: STD_LOGIC_VECTOR( 4 DOWNTO 0 ); 
+	SIGNAL write_data_WB										: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	SIGNAL write_data_mux_WB									: STD_LOGIC_VECTOR( 31 DOWNTO 0 );
+	------------------------------------------------------
+	
+	-- Interrupt Signals
+	SIGNAL MemAddr												: STD_LOGIC_VECTOR(DataBusSize-1 DOWNTO 0);
+	SIGNAL ISRAddr												: STD_LOGIC_VECTOR(DataBusSize-1 DOWNTO 0);
+	
+	-- Memory gating signals (prevent internal memory access during peripheral operations)
+	SIGNAL dmem_rd_en											: STD_LOGIC;
+	SIGNAL dmem_wr_en											: STD_LOGIC;
+	SIGNAL is_peripheral_addr									: STD_LOGIC;
+	SIGNAL is_peripheral_access									: STD_LOGIC;
+	SIGNAL EPC													: STD_LOGIC_VECTOR(7 DOWNTO 0);
+	SIGNAL Flush_IF_Intr, Flush_ID_Intr, Flush_EX_Intr 			: STD_LOGIC;
+	-- FIX: 'this stage holds a real instruction' markers. IR = 0x00000000 is a
+	-- legal nop, so the instruction word alone cannot identify a bubble.
+	SIGNAL Valid_ID, Valid_EX							: STD_LOGIC := '0';
+	SIGNAL INTA_sig												: STD_LOGIC;
+	SIGNAL Read_ISR_PC											: STD_LOGIC;
+	SIGNAL BranchOccured										: STD_LOGIC;
+	-- FIX: 'a return-from-interrupt (jr $k1) is in flight'. jr $k1 re-enables
+	-- GIE in ID, so a still-pending interrupt could be accepted while the jr
+	-- is in the pipeline - before the PC has reached the return target.
+	-- $k1 would then be overwritten with an address inside the ISR and the
+	-- handler would return into itself. Acceptance is held off for the two
+	-- cycles the jr needs to retire.
+	SIGNAL RFI_ID, RFI_EX								: STD_LOGIC;
+	SIGNAL INTR_OneCycle										: STD_LOGIC;
+	SIGNAL HOLD_PC												: STD_LOGIC;
+	
+	-- Interrupt vector table access
+	SIGNAL int_mem_read											: STD_LOGIC;
+	SIGNAL int_mem_addr											: STD_LOGIC_VECTOR(31 DOWNTO 0);
+	SIGNAL vector_isr_addr										: STD_LOGIC_VECTOR(31 DOWNTO 0);
+	SIGNAL dtcm_addr_mux										: STD_LOGIC_VECTOR(MemWidth+1 DOWNTO 2);
+	SIGNAL dtcm_read_ctrl_mux									: STD_LOGIC;
 
 BEGIN
 
--------------------------------------------------------------------------------------
--- OUTPUT SIGNAL ASSIGNMENTS FOR DEBUG AND MONITORING
--------------------------------------------------------------------------------------
-    -- Debug outputs for SignalTap
-    instruction_top_o   <= instruction_w;
-    alu_result_o        <= alu_result_w;
-    read_data1_o        <= read_data1_w;
-    read_data2_o        <= read_data2_w;
-    write_data_o        <= dtcm_data_rd_w WHEN MemtoReg_w = "01" ELSE alu_result_w;
-    Branch_ctrl_o       <= branch_w;
-    Zero_o              <= zero_w;
-    RegWrite_ctrl_o     <= reg_write_w;
-    MemWrite_ctrl_o     <= mem_write_w;	
-   
-    -- Performance counter outputs
-    mclk_cnt_o          <= master_clk_cnt;
-    inst_cnt_o          <= perf_inst_count;
+is_peripheral_addr <= '1' when (
+	ALU_Result_MEM(11 downto 0) = X"800" or
+	ALU_Result_MEM(11 downto 0) = X"804" or
+	ALU_Result_MEM(11 downto 0) = X"805" or
+	ALU_Result_MEM(11 downto 0) = X"808" or
+	ALU_Result_MEM(11 downto 0) = X"809" or
+	ALU_Result_MEM(11 downto 0) = X"80C" or
+	ALU_Result_MEM(11 downto 0) = X"80D" or
+	ALU_Result_MEM(11 downto 0) = X"810" or
+	ALU_Result_MEM(11 downto 0) = X"814" or
+	ALU_Result_MEM(11 downto 0) = X"818" or
+	ALU_Result_MEM(11 downto 0) = X"819" or
+	ALU_Result_MEM(11 downto 0) = X"81A" or
+	ALU_Result_MEM(11 downto 0) = X"81C" or
+	ALU_Result_MEM(11 downto 0) = X"820" or
+	ALU_Result_MEM(11 downto 0) = X"824" or
+	ALU_Result_MEM(11 downto 0) = X"828" or
+	ALU_Result_MEM(11 downto 0) = X"82C" or
+	ALU_Result_MEM(11 downto 0) = X"830" or
+	ALU_Result_MEM(11 downto 0) = X"834" or
+	ALU_Result_MEM(11 downto 0) = X"838" or
+	ALU_Result_MEM(11 downto 0) = X"83C" or
+	ALU_Result_MEM(11 downto 0) = X"840" or
+	ALU_Result_MEM(11 downto 0) = X"841" or
+	ALU_Result_MEM(11 downto 0) = X"842"
+  ) else '0';
+	------ MCU ------
+	ControlBus		<= write_data_MEM(CtrlBusSize-1 DOWNTO 0) WHEN 
+					   (ALU_Result_MEM(11 DOWNTO 0) = X"81C" AND MemWrite_MEM = '1') 
+					   ELSE (others => '0');	  
+	MemReadBus		<= int_mem_read OR MemRead_MEM;  -- Enable read for interrupt or normal operation
+	MemWriteBus		<= MemWrite_MEM;
+	AddressBus		<= int_mem_addr WHEN int_mem_read = '1' ELSE  -- Use interrupt address during vector table read
+					   X"00000" & ALU_Result_MEM(11 DOWNTO 0) WHEN 
+					   (MemRead_MEM = '1' OR MemWrite_MEM = '1') 
+					   ELSE (others => '0');
+					   
+	-- FIXED: Prevent DataBus XXX contamination of CPU internal operations
+	-- DataInputBus should NEVER feed XXX from DataBus into CPU registers during non-peripheral operations
+	-- CRITICAL FIX: Only use DataBus when explicitly reading from peripherals, otherwise use clean internal memory
+	DataInputBus	<= 	read_data_MEM 	WHEN int_mem_read = '1' ELSE  -- Interrupt vector table read (internal)
+						DataBus 		WHEN (is_peripheral_addr = '1' AND MemRead_MEM = '1') ELSE  -- Peripheral access only
+						read_data_MEM 	WHEN (is_peripheral_addr = '0' AND MemRead_MEM = '1') ELSE  -- Internal memory access (internal)
+						X"00000000";	-- DEFAULT: Zero for non-memory operations (prevents XXX contamination completely)
 
-    -- Pipeline stage outputs for TOP entity
-    WB_PC_o             <= mem_curr_pc_to_wb;
-    WB_inst_o           <= mem_curr_inst_to_wb;
+	DataBus			<= 	write_data_MEM 	WHEN (is_peripheral_addr = '1' AND MemWrite_MEM = '1') 
+						ELSE  BTCNT		WHEN (AddressBus(11 DOWNTO 0) = X"820" AND MemReadBus = '1') ELSE 
+						FIROUT		WHEN (CS_FIROUT = '1' AND MemReadBus = '1' ) ELSE          -- Use forced value
+						X"000000" & FIRCTL_STATUS WHEN (CS_FIRCTL = '1' AND MemReadBus = '1') ELSE  -- Use forced value
+						COEF3_0		WHEN (CS_COEF3_0 = '1' AND MemReadBus = '1') ELSE         -- Use register value
+						COEF7_4		WHEN (CS_COEF7_4 = '1' AND MemReadBus = '1') ELSE         -- Use register value
+						(OTHERS => 'Z'); 
+	
+	MemAddr 		<= 	DataBus 		WHEN (INTA_sig = '0') ELSE 
+						ALU_Result_MEM	WHEN (INTA_sig = '1') ELSE
+						(others => '0');
 
--------------------------------------------------------------------------------------
--- CLOCK GENERATION - PLL OR DIRECT CLOCK
--------------------------------------------------------------------------------------
-    PLL_GENERATE: 
-    if (MODELSIM = 0) generate
-        PLL_INST: PLL
-        PORT MAP (
-            inclk0  => clk_i,
-            c0      => master_clk
-        );
-    else generate
-        master_clk <= clk_i;
-    end generate;
 
--------------------------------------------------------------------------------------
--- INSTRUCTION FETCH STAGE
--------------------------------------------------------------------------------------
-    INSTRUCTION_FETCH: Ifetch
-    GENERIC MAP(
-        WORD_GRANULARITY    => WORD_GRANULARITY,
-        DATA_BUS_WIDTH      => DATA_BUS_WIDTH, 
-        PC_WIDTH            => PC_WIDTH,
-        NEXT_PC_WIDTH       => PC_WIDTH - 2,
-        ITCM_ADDR_WIDTH     => ITCM_ADDR_WIDTH,
-        WORDS_NUM           => DATA_WORDS_NUM,
-        INST_CNT_WIDTH      => INST_CNT_WIDTH
-    )
-    PORT MAP (	
-        clk_i               => master_clk,
-        rst_i               => rst_i,
-        rst_o               => if_reset_to_id,
-        
-        -- Pipeline control
-        flush_i             => '0',  -- Disable actual flush - natural timing handles jumps correctly
-        stall_i             => stall_or_run_control,
-        pc_select_i         => id_pc_select,
-        JumpAddress_i       => id_jump_address,
-        BranchAddress_i     => id_branch_address,
-        
-        -- Outputs      
-        curr_pc_o           => IF_PC_o,
-        curr_inst_o         => IF_inst_o,
-        pc_o                => if_pc_debug,
-        pc_plus4_o          => if_pc_plus4,
-        instruction_o       => if_instruction,
-        inst_cnt_o          => if_instruction_count
-    );
+	
+	-- Memory gating logic: Only access internal memory when NOT accessing peripherals
+	is_peripheral_access <= is_peripheral_addr;  -- Bit 11 indicates peripheral access
+	dmem_rd_en <= MemRead_MEM  AND (NOT is_peripheral_access);
+	dmem_wr_en <= MemWrite_MEM AND (NOT is_peripheral_access);
+	
+	-- Interrupt memory access multiplexing
+	dtcm_addr_mux <= int_mem_addr(MemWidth+1 DOWNTO 2) WHEN int_mem_read = '1' ELSE ALU_Result_MEM(MemWidth+1 DOWNTO 2);
+	dtcm_read_ctrl_mux <= int_mem_read OR dmem_rd_en;
 
--------------------------------------------------------------------------------------
--- INSTRUCTION DECODE STAGE
--------------------------------------------------------------------------------------
-    INSTRUCTION_DECODE: Idecode
-    GENERIC MAP(
-        DATA_BUS_WIDTH      => DATA_BUS_WIDTH,
-        PC_WIDTH            => PC_WIDTH
-    )
-    PORT MAP (	
-        clk_i               => master_clk,
-        rst_i               => rst_i,
-        rst_prev_stage      => if_reset_to_id,
-        
-        -- Input from IF stage
-        curr_PC_i           => if_pc_debug,
-        instruction_i       => if_instruction,
-        PC_PLUS_FOUR_i      => if_pc_plus4,
-        stall_i             => stall_or_run_control,
-        
-        -- Writeback inputs
-        write_reg_addr_i    => wb_write_reg_addr_mux,
-        write_reg_data_i    => wb_write_reg_data,
-        dtcm_data_rd_i      => wb_dtcm_data_feedback,
-        alu_result_i        => wb_alu_result_feedback,
-        
-        -- Forwarding inputs
-        ForwardRT_Dec_i     => forward_rt_to_id,
-        ForwardRS_Dec_i     => forward_rs_to_id,
-        RT_from_mem_i       => ex_alu_result,
-        RS_from_mem_i       => ex_alu_result,
-        
-        -- Control signals input
-        RegDst_ctrl_i       => ctrl_reg_dst,
-        ALUSrc_ctrl_i       => ctrl_alu_src,
-        ALUOp_ctrl_i        => ctrl_alu_op,
-        MemtOReg_ctrl_i     => ctrl_mem_to_reg,
-        MemRead_ctrl_i      => ctrl_mem_read,
-        MemWrite_ctrl_i     => ctrl_mem_write,
-        RegWrite_ctrl_i     => ctrl_reg_write,
-        RegWrite_WB_i       => mem_to_wb_reg_write,
-        Branch_ctrl_i       => ctrl_branch,
-        jump_i              => ctrl_jump,
-        
-        -- Control signals output to EX stage
-        RegDst_ctrl_o       => id_to_ex_reg_dst,
-        ALUSrc_ctrl_o       => id_to_ex_alu_src,
-        ALUOp_ctrl_o        => id_to_ex_alu_op,
-        MemtOReg_ctrl_o     => id_to_ex_mem_to_reg,
-        MemRead_ctrl_o      => id_to_ex_mem_read,
-        MemWrite_ctrl_o     => id_to_ex_mem_write,
-        RegWrite_ctrl_o     => id_to_ex_reg_write,
-        
-        -- Branch/Jump control back to IF
-        pc_select_o         => id_pc_select,
-        JumpAddress_o       => id_jump_address,
-        BranchAddress_o     => id_branch_address,
-        
-        -- Data outputs to EX stage
-        read_data1_o        => id_read_data1,
-        read_data2_o        => id_read_data2,
-        sign_extend_o       => id_sign_extend,
-        
-        -- Register addresses to EX stage
-        RegisterS_o         => id_to_ex_reg_s,
-        RegisterT_o         => id_to_ex_reg_t,
-        RegisterD_o         => id_to_ex_reg_d,
-        
-        -- Pipeline registers
-        PC_PLUS_FOUR_o      => id_to_ex_pc_plus4,
-        curr_pc_o           => ID_PC_o,
-        curr_inst_o         => ID_inst_o,
-        synch_curr_pc_o     => id_curr_pc_to_ex,
-        synch_curr_inst_o   => id_curr_inst_to_ex
-    );
+	
+	---------- CONSIDER MOVING THOSE PROCESSES INTO CONTROL ENTITY ----------
+	---------- INTERRUPT ----------
+	------ INTA and ISR Addr ------
+	INTA	<= INTA_sig;
+	INTR_OneCycle	<= 	'1' WHEN INTR = '1' 		ELSE
+						'0' WHEN rising_edge(clock) ELSE
+						'0' WHEN reset = '1'		ELSE
+						unaffected;
+	
+	PROCESS (clock, INTR, reset)
+		VARIABLE INTR_STATE 	: STD_LOGIC_VECTOR(2 DOWNTO 0);  -- 3 bits for 6 states
+		VARIABLE INTA_prev		: STD_LOGIC;
+		VARIABLE TYPE_content	: STD_LOGIC_VECTOR(31 DOWNTO 0);
 
--------------------------------------------------------------------------------------
--- CONTROL UNIT
--------------------------------------------------------------------------------------
-    CONTROL_UNIT: control
-    PORT MAP ( 	
-        clk_i               => master_clk,
-        opcode_i            => if_instruction(31 DOWNTO 26),
-        funct_i             => if_instruction(5 DOWNTO 0),
-        
-        -- Control outputs
-        RegDst_ctrl_o       => ctrl_reg_dst,
-        ALUSrc_ctrl_o       => ctrl_alu_src,
-        MemtoReg_ctrl_o     => ctrl_mem_to_reg,
-        RegWrite_ctrl_o     => ctrl_reg_write,
-        MemRead_ctrl_o      => ctrl_mem_read,
-        MemWrite_ctrl_o     => ctrl_mem_write,
-        Branch_ctrl_o       => ctrl_branch,  
-        ALUOp_ctrl_o        => ctrl_alu_op,
-        jump_o              => ctrl_jump
-    );
-    
-    -- Branch condition for hazard detection
-    hazard_branch_condition <= '1' WHEN (ctrl_branch = "00" OR ctrl_branch = "01") ELSE '0';
+	BEGIN
+		IF reset = '1' THEN
+			INTR_STATE 		:= "000";
+			INTA_sig 		<= '1';
+			Read_ISR_PC		<= '0';
+			HOLD_PC			<= '0';
+			INTA_prev		:= '1';
+			int_mem_read	<= '0';
+			int_mem_addr	<= (OTHERS => '0');
+			TYPE_content	:= (OTHERS => '0');
+		
+		ELSIF (falling_edge(clock)) THEN
+			-- State 000: Wait for INTR, then assert INTA (create falling edge)
+			IF (INTR_STATE = "000") THEN
+				IF (INTR = '1' AND RFI_ID = '0' AND RFI_EX = '0') THEN
+					INTA_sig	<= '0';  -- Create INTA falling edge  
+					INTR_STATE	:= "001";
+				END IF;
+				Read_ISR_PC		<= '0';
+				HOLD_PC			<= '0';
+				int_mem_read	<= '0';
+				
+			-- State 001: INTA falling edge - GIE=0, halt CPU, read TYPE
+			ELSIF (INTR_STATE = "001") THEN
+				-- Protocol: i. GIE=0 (handled automatically in IDECODE)
+				-- Protocol: ii. TYPE content is written on Data BUS by interrupt controller
+				HOLD_PC			<= '1';        -- Halt CPU operation
+				TYPE_content	:= DataBus;    -- Read TYPE value from interrupt controller on DataBus
+				INTR_STATE 		:= "010";
+				
+			-- State 010: Use TYPE as data memory address (emulate load instruction)
+			ELSIF (INTR_STATE = "010") THEN
+				-- Protocol: iv. Serial emulation of load(TYPE content)
+				int_mem_addr	<= TYPE_content;  -- Use TYPE as memory address
+				int_mem_read	<= '1';           -- Request memory read
+				INTR_STATE 		:= "011";
+				
+			-- State 011: Wait for memory read to complete (latency cycle)
+			ELSIF (INTR_STATE = "011") THEN
+				-- Allow one cycle for memory read to propagate
+				INTR_STATE 		:= "100";
+				
+			-- State 100: Read ISR address from vector table 
+			ELSIF (INTR_STATE = "100") THEN
+				-- Get ISR address from data memory at address TYPE
+				vector_isr_addr	<= read_data_MEM;  -- Store ISR address from vector table
+				int_mem_read	<= '0';            -- Stop memory read
+				INTR_STATE 		:= "101";
+				
+			-- State 101: Jump to ISR (emulate jal instruction) 
+			ELSIF (INTR_STATE = "101") THEN
+				-- Protocol: iv. jal to Mem[TYPE] content where $k1=PC+4
+				-- Protocol: iii. Set INTA=1, clear BTIFG, DIVIFG flags
+				ISRAddr			<= vector_isr_addr(31 DOWNTO 0);  -- Word-aligned ISR address
+				INTA_sig		<= '1';            -- Set INTA back to '1'
+				INTR_STATE 		:= "000";          -- Return to idle state
+				Read_ISR_PC		<= '1';            -- Signal to jump to ISR
+				HOLD_PC			<= '0';            -- Resume CPU operation at ISR
+				
+			-- Default: Safety return to idle
+			ELSE 
+				INTR_STATE := "000";  -- Safety: return to idle
+				int_mem_read	<= '0';
+			END IF;
+			
+			INTA_prev := INTA_sig;  -- Track INTA for falling edge detection
+		
+		END IF;
+	END PROCESS;
+	
+	------ EPC (Exception Program Counter) PROCESS ------
+	-- The interrupt flush clears IF/ID, ID/EX and EX/MEM, so the instructions in
+	-- IF, ID and EX are all discarded. EPC must name the OLDEST of them: name a
+	-- younger one and the older instruction is never re-fetched (lost); name an
+	-- older one and an already-completed instruction runs twice (duplicated).
+	--
+	-- The previous version used PC_plus_4_IF minus a constant. That is only
+	-- valid when IF, ID and EX hold three consecutive addresses. After a taken
+	-- branch PC_IF holds the target, and after a stall the stages hold bubbles,
+	-- so the constant lands wrong in both directions. Every stage already
+	-- carries its own PC down the pipeline, so use that instead.
+	--
+	-- Latched once, on the rising edge of INTR: INTR stays asserted for several
+	-- cycles of the entry sequence while the pipeline drains.
+	PROCESS (clock, reset)
+		VARIABLE INTR_prev : STD_LOGIC;
+	BEGIN
+		IF reset = '1' THEN
+			EPC		  <= (OTHERS => '0');
+			INTR_prev := '0';
 
--------------------------------------------------------------------------------------
--- EXECUTE STAGE
--------------------------------------------------------------------------------------
-    EXECUTE_STAGE: Execute
-    GENERIC MAP(
-        DATA_BUS_WIDTH      => DATA_BUS_WIDTH,
-        FUNCT_WIDTH         => FUNCT_WIDTH,
-        PC_WIDTH            => PC_WIDTH
-    )
-    PORT MAP (	
-        clk_i               => master_clk,
-        
-        -- Data inputs from ID stage
-        read_data1_i        => id_read_data1,
-        read_data2_i        => id_read_data2,
-        sign_extend_i       => id_sign_extend,
-        funct_i             => id_sign_extend(5 DOWNTO 0),
-        pc_plus4_i          => id_to_ex_pc_plus4,
-        
-        -- Control inputs from ID stage
-        ALUOp_ctrl_i        => id_to_ex_alu_op,
-        ALUSrc_ctrl_i       => id_to_ex_alu_src,
-        RegDst_ctrl_i       => id_to_ex_reg_dst,
-        
-        -- Register addresses from ID stage
-        RegisterS_i         => id_to_ex_reg_s,
-        RegisterT_i         => id_to_ex_reg_t,
-        RegisterD_i         => id_to_ex_reg_d,
-        
-        -- Forwarding inputs
-        ForwardRS           => forward_rs_to_ex,
-        ForwardRT           => forward_rt_to_ex,
-        RegForwardMEM       => forward_mem_to_ex_mux,
-        RegForwarWB         => wb_write_reg_data,
-        
-        -- Pipeline control signals
-        MemtOReg_ctrl_i     => id_to_ex_mem_to_reg,
-        MemRead_ctrl_i      => id_to_ex_mem_read,
-        MemWrite_ctrl_i     => id_to_ex_mem_write,
-        RegWrite_ctrl_i     => id_to_ex_reg_write,
-        
-        -- Pipeline registers input
-        curr_PC_i           => id_curr_pc_to_ex,
-        curr_inst_i         => id_curr_inst_to_ex,
-        
-        -- Outputs to MEM stage
-        RegisterRes_o       => ex_write_reg_addr,
-        alu_res_o           => ex_alu_result,
-        DTCM_data_o         => ex_dtcm_write_data,
-        pc_plus4_o          => ex_to_mem_pc_plus4,
-        
-        -- Control outputs to MEM stage
-        MemtOReg_ctrl_o     => ex_to_mem_mem_to_reg,
-        MemRead_ctrl_o      => ex_to_mem_mem_read,
-        MemWrite_ctrl_o     => ex_to_mem_mem_write,
-        RegWrite_ctrl_o     => ex_to_mem_reg_write,
-        
-        -- Pipeline registers output
-        curr_pc_o           => EX_PC_o,
-        curr_inst_o         => EX_inst_o,
-        synch_curr_pc_o     => ex_curr_pc_to_mem,
-        synch_curr_inst_o   => ex_curr_inst_to_mem
-    );
+		ELSIF (rising_edge(clock)) THEN
+			IF (INTR = '1' AND INTR_prev = '0') THEN
+				IF (Valid_EX = '1') THEN
+					EPC <= PC_plus_4_EX(9 DOWNTO 2) - 1;   -- EX is the oldest flushed
+				ELSIF (Valid_ID = '1') THEN
+					EPC <= PC_plus_4_ID(9 DOWNTO 2) - 1;   -- EX held a bubble
+				ELSE
+					EPC <= PC_plus_4_IF(9 DOWNTO 2) - 1;   -- ID held a bubble too
+				END IF;
+			END IF;
+			INTR_prev := INTR;
+		END IF;
 
--------------------------------------------------------------------------------------
--- MEMORY STAGE - WORD/BYTE GRANULARITY SELECTION
--------------------------------------------------------------------------------------
-    G1: 
-    if (WORD_GRANULARITY = True) generate -- Each WORD has unique address
-        MEMORY_STAGE_WORD: dmemory
-        GENERIC MAP(
-            DATA_BUS_WIDTH      => DATA_BUS_WIDTH, 
-            DTCM_ADDR_WIDTH     => DTCM_ADDR_WIDTH,
-            WORDS_NUM           => DATA_WORDS_NUM,
-            PC_WIDTH            => PC_WIDTH
-        )
-        PORT MAP (	
-            clk_i               => master_clk,
-            rst_i               => rst_i,
-            
-            -- Memory interface
-            dtcm_data_wr_i      => ex_dtcm_write_data,
-            dtcm_addr_i         => ex_alu_result((DTCM_ADDR_WIDTH)+1 DOWNTO 2),
-            MemRead_ctrl_i      => ex_to_mem_mem_read,
-            MemWrite_ctrl_i     => ex_to_mem_mem_write,
-            
-            -- Pipeline inputs
-            pc_plus4_i          => ex_to_mem_pc_plus4,
-            curr_PC_i           => ex_curr_pc_to_mem,
-            curr_inst_i         => ex_curr_inst_to_mem,
-            ALU_res_i           => ex_alu_result,
-            RegisterRes_i       => ex_write_reg_addr,
-            
-            -- Control inputs
-            MemtOReg_ctrl_i     => ex_to_mem_mem_to_reg,
-            RegWrite_ctrl_i     => ex_to_mem_reg_write,
-            
-            -- Outputs to WB stage
-            ALU_res_o           => mem_alu_result,
-            RegisterRes_o       => mem_write_reg_addr,
-            pc_plus4_o          => mem_to_wb_pc_plus4,
-            dtcm_data_rd_o      => mem_dtcm_read_data,
-            dtcm_data_rd_not_syncronic_o => mem_dtcm_read_data_async,
-            
-            -- Control outputs to WB stage
-            MemtOReg_ctrl_o     => mem_to_wb_mem_to_reg,
-            RegWrite_ctrl_o     => mem_to_wb_reg_write,
-            
-            -- Pipeline registers output
-            curr_pc_o           => MEM_PC_o,
-            curr_inst_o         => MEM_inst_o,
-            synch_curr_pc_o     => mem_curr_pc_to_wb,
-            synch_curr_inst_o   => mem_curr_inst_to_wb
-        );		
-    elsif (WORD_GRANULARITY = False) generate -- Each BYTE has a unique address	
-        MEMORY_STAGE_BYTE: dmemory
-        GENERIC MAP(
-            DATA_BUS_WIDTH      => DATA_BUS_WIDTH, 
-            DTCM_ADDR_WIDTH     => DTCM_ADDR_WIDTH,
-            WORDS_NUM           => DATA_WORDS_NUM,
-            PC_WIDTH            => PC_WIDTH
-        )
-        PORT MAP (	
-            clk_i               => master_clk,
-            rst_i               => rst_i,
-            
-            -- Memory interface (byte addressed)
-            dtcm_addr_i         => ex_alu_result((DTCM_ADDR_WIDTH+2)-1 DOWNTO 2) & "00",
-            dtcm_data_wr_i      => ex_dtcm_write_data,
-            MemRead_ctrl_i      => ex_to_mem_mem_read,
-            MemWrite_ctrl_i     => ex_to_mem_mem_write,
-            
-            -- Pipeline inputs
-            pc_plus4_i          => ex_to_mem_pc_plus4,
-            curr_PC_i           => ex_curr_pc_to_mem,
-            curr_inst_i         => ex_curr_inst_to_mem,
-            ALU_res_i           => ex_alu_result,
-            RegisterRes_i       => ex_write_reg_addr,
-            
-            -- Control inputs
-            MemtOReg_ctrl_i     => ex_to_mem_mem_to_reg,
-            RegWrite_ctrl_i     => ex_to_mem_reg_write,
-            
-            -- Outputs to WB stage
-            ALU_res_o           => mem_alu_result,
-            RegisterRes_o       => mem_write_reg_addr,
-            pc_plus4_o          => mem_to_wb_pc_plus4,
-            dtcm_data_rd_o      => mem_dtcm_read_data,
-            dtcm_data_rd_not_syncronic_o => mem_dtcm_read_data_async,
-            
-            -- Control outputs to WB stage
-            MemtOReg_ctrl_o     => mem_to_wb_mem_to_reg,
-            RegWrite_ctrl_o     => mem_to_wb_reg_write,
-            
-            -- Pipeline registers output
-            curr_pc_o           => MEM_PC_o,
-            curr_inst_o         => MEM_inst_o,
-            synch_curr_pc_o     => mem_curr_pc_to_wb,
-            synch_curr_inst_o   => mem_curr_inst_to_wb
-        );
-    end generate;
+	END PROCESS;
+	------------------------------------------------------------------------
 
--------------------------------------------------------------------------------------
--- FORWARDING MUX FOR MEMORY TO EXECUTE BYPASS
--------------------------------------------------------------------------------------
-    -- Non-synchronous forwarding from memory to execute stage
-    forward_mem_to_ex_mux <= mem_alu_result WHEN (ex_to_mem_mem_to_reg = "00") ELSE
-                             mem_dtcm_read_data_async;
+	
+   --------------------- PORT MAP COMPONENTS --------------------------
+   ----- Instruction Fetch -----
+	IFE : Ifetch
+	GENERIC MAP(MemWidth => MemWidth, SIM => SIM) 
+	PORT MAP (	Instruction		=> IR_IF,
+    	    	PC_plus_4_out 	=> PC_plus_4_IF,
+				Add_Result 		=> PCBranch_addr_ID( 7 DOWNTO 0 ), 
+				PCSrc			=> PCSrc_ID,
+				PC_out 			=> PC_BPADD,      
+				JumpAddr		=> JumpAddr_ID,
+				clock 			=> clock, 
+				ena 		    => ena,
+				Stall_IF	    => Stall_IF,
+				reset 			=> reset,
+				INTA			=> INTA_sig,
+				Read_ISR_PC		=> Read_ISR_PC,
+				HOLD_PC			=> HOLD_PC,
+				ISRAddr			=> ISRAddr
+				);
 
--------------------------------------------------------------------------------------
--- HAZARD DETECTION UNIT
--------------------------------------------------------------------------------------
-    HAZARD_UNIT: Hazard_detection_unit
-    PORT MAP(
-        -- Register addresses for hazard detection
-        RegRtEx             => id_to_ex_reg_t,
-        RegRtID             => if_instruction(20 DOWNTO 16),
-        RegRdEx             => id_to_ex_reg_d,
-        RegRsID             => if_instruction(25 DOWNTO 21),
-        
-        -- Control signals
-        Reg_writeEx         => id_to_ex_reg_write,
-        Branch_cond         => hazard_branch_condition,
-        RegDstEx            => id_to_ex_reg_dst,
-        -- Hazard control outputs
-        stall_cnt           => hazard_stall_cnt,
-        stall_pc            => hazard_stall_pc
-    );
+	----- Instruction Decode -----
+	ID : Idecode
+   	PORT MAP (	read_data_1 	=> read_data_1_ID,
+        		read_data_2 	=> read_data_2_ID,
+				write_register_address_0 => Wr_reg_addr_0_ID,
+				write_register_address_1 => Wr_reg_addr_1_ID,
+				write_register_address   => Wr_reg_addr_WB,
+        		Instruction 	=> IR_ID,
+				PC_plus_4_shifted => PC_plus_4_ID(9 DOWNTO 2),
+				RegWrite 		=> RegWrite_WB,
+				ForwardA_ID		=> ForwardA_ID,
+				ForwardB_ID		=> ForwardB_ID,
+				BranchBeq		=> BranchBeq_ID,
+				BranchBne		=> BranchBne_ID,
+				Jump			=> Jump_ID,
+				JAL				=> Jal_ID,
+				Stall_ID	    => Stall_ID,
+				write_data		=> write_data_mux_WB,  
+				Branch_read_data_FW => ALU_Result_MEM, --Branch forwarding
+				Sign_extend 	=> Sign_extend_ID,
+				PCSrc			=> PCSrc_ID,
+				JumpAddr		=> JumpAddr_ID,
+				PCBranch_addr	=> PCBranch_addr_ID,
+				GIE				=> GIE,
+				Read_ISR_PC		=> Read_ISR_PC,
+				EPC				=> EPC,
+				INTR			=> INTR,
+				INTR_Active		=> INTR_Active,
+				CLR_IRQ			=> CLR_IRQ,
+        		clock 			=> clock,  
+				reset 			=> reset );
+	
+	
+	BranchOccured	<= Jump_EX OR Jal_EX OR BranchBeq_EX OR BranchBne_EX;
+	RFI_ID <= '1' WHEN (Jump_ID = '1' AND IR_ID(25 DOWNTO 21) = "11011") ELSE '0';
+	RFI_EX <= '1' WHEN (Jump_EX = '1' AND IR_EX(25 DOWNTO 21) = "11011") ELSE '0';
+	
+	----- Control Unit in Instruction Decode -----
+	CTL:   control
+	PORT MAP ( 	Opcode 			=> IR_ID( 31 DOWNTO 26 ),
+                Funct			=> IR_ID( 5 DOWNTO 0 ),
+				RegDst 			=> RegDst_ID,
+				ALUSrc 			=> ALUSrc_ID,
+				MemtoReg 		=> MemtoReg_ID,
+				RegWrite 		=> RegWrite_ID,
+				MemRead 		=> MemRead_ID,
+				MemWrite 		=> MemWrite_ID,
+				BranchBeq		=> BranchBeq_ID,
+				BranchBne		=> BranchBne_ID,
+				Jump			=> Jump_ID,
+				Jal				=> Jal_ID,
+				ALUop 			=> ALUop_ID,
+				INTR			=> INTR,
+				IF_FLUSH		=> Flush_IF_Intr,
+				ID_FLUSH		=> Flush_ID_Intr,
+				EX_FLUSH		=> Flush_EX_Intr,
+				HOLD_PC			=> HOLD_PC,
+				Read_ISR_PC		=> Read_ISR_PC,
+                clock 			=> clock,
+				reset 			=> reset );
 
--------------------------------------------------------------------------------------
--- FORWARDING UNIT
--------------------------------------------------------------------------------------
-    FORWARDING_UNIT: ForwordingUnit
-    PORT MAP(
-        -- Clock
-        clk                 => master_clk,
-        
-        -- Register addresses for forwarding detection
-        RegisterRdMEM       => ex_write_reg_addr,
-        RegisterRdWB        => mem_write_reg_addr,
-        RegisterRsEX        => id_to_ex_reg_s,
-        RegisterRtEX        => id_to_ex_reg_t,
-        RegisterRsDEC       => if_instruction(25 DOWNTO 21),
-        RegisterRtDEC       => if_instruction(20 DOWNTO 16),
-        
-        -- Write enable signals
-        RegisteWriteMem     => ex_to_mem_reg_write,
-        RegisteWriteWB      => mem_to_wb_reg_write,
-        
-        -- Forwarding control outputs
-        ForwardRS_Exe       => forward_rs_to_ex,
-        ForwardRT_Exe       => forward_rt_to_ex,
-        ForwardRT_Dec       => forward_rt_to_id,
-        ForwardRS_Dec       => forward_rs_to_id
-    );
+	----- Execute -----
+	EXE:  Execute
+   	PORT MAP (	Read_data_1 	=> read_data_1_EX,
+             	Read_data_2 	=> read_data_2_EX,
+				Sign_extend 	=> Sign_extend_EX,
+                Function_opcode	=> Sign_extend_EX( 5 DOWNTO 0 ),
+				Opcode 			=> Opcode_EX,
+				ALUOp 			=> ALUOp_EX,
+				ALUSrc 			=> ALUSrc_EX,
+				Zero 			=> Zero_EX,
+				RegDst			=> RegDst_EX,
+                ALU_Result		=> ALU_Result_EX,
+				PC_plus_4		=> PC_plus_4_EX,
+				Wr_reg_addr     => Wr_reg_addr_EX,
+				Wr_reg_addr_0   => Wr_reg_addr_0_EX,
+				Wr_reg_addr_1   => Wr_reg_addr_1_EX,
+				Wr_data_FW_WB	=> write_data_WB,  -- For Forwarding
+				Wr_data_FW_MEM	=> ALU_Result_MEM, -- For Forwarding
+				ForwardA		=> ForwardA,
+				ForwardB		=> ForwardB,
+				WriteData_EX    => write_data_EX,
+				Flush_EX		=> Flush_EX_Intr,
+                Clock			=> clock,
+				Reset			=> reset );
+				
+	----- Hazard Unit (Stalls AND Flushs AND Forwarding) -----
+	Hazard:	HazardUnit
+	PORT MAP(	
+				MemtoReg_EX		=> MemtoReg_EX,	
+				MemtoReg_MEM	=> MemtoReg_MEM,
+				WriteReg_EX		=> Wr_reg_addr_EX,
+				WriteReg_MEM   	=> Wr_reg_addr_MEM,
+				WriteReg_WB		=> Wr_reg_addr_WB,
+				RegRs_EX		=> IR_EX(25 DOWNTO 21),
+				RegRt_EX 		=> IR_EX(20 DOWNTO 16),
+				RegRs_ID		=> IR_ID(25 DOWNTO 21),
+				RegRt_ID 		=> IR_ID(20 DOWNTO 16),
+				EX_RegWr		=> RegWrite_EX,
+				MEM_RegWr   	=> RegWrite_MEM,
+				WB_RegWr		=> RegWrite_WB,
+				BranchBeq_ID	=> BranchBeq_ID,
+				BranchBne_ID	=> BranchBne_ID,
+				Jump_ID			=> Jump_ID,
+				Stall_IF        => Stall_IF,
+				Stall_ID        => Stall_ID,
+				Flush_EX        => Flush_EX,
+				ForwardA    	=> ForwardA,
+				ForwardB		=> ForwardB,
+				ForwardA_Branch => ForwardA_ID,
+				ForwardB_Branch	=> ForwardB_ID				
+	);
+		
+	----- Data Memory -----
+	MEM:  dmemory
+	GENERIC MAP(
+	DATA_BUS_WIDTH => 32, 
+	DTCM_ADDR_WIDTH => MemWidth, 
+	WORDS_NUM => 256
+	) 
+	PORT MAP (	
+	clk_i			=> clock,
+	rst_i			=> reset,
+	dtcm_addr_i		=> dtcm_addr_mux,
+	dtcm_data_wr_i	=> write_data_MEM, 
+	MemRead_ctrl_i	=> dtcm_read_ctrl_mux,
+	MemWrite_ctrl_i	=> dmem_wr_en,
+	dtcm_data_rd_o	=> read_data_MEM
+	);
+	----- Write Back -----	
+	WB:	WRITE_BACK
+	PORT MAP(	
+				ALU_Result		=> ALU_Result_WB,
+				read_data		=> read_data_WB,
+				PC_plus_4_shifted => PC_plus_4_WB(9 DOWNTO 2),
+				MemtoReg		=> MemtoReg_WB,
+				Jal				=> Jal_WB,  
+				write_data		=> write_data_WB,
+				write_data_mux	=> write_data_mux_WB
+	);
+	
+	---------------------------------------------------------------------------
 
--------------------------------------------------------------------------------------
--- WRITE BACK STAGE DATA MUX
--------------------------------------------------------------------------------------
-    -- Multiplexer to select write back data
-    wb_write_reg_data <= mem_alu_result WHEN (mem_to_wb_mem_to_reg = "00") ELSE
-                         (X"00000" & B"00" & mem_to_wb_pc_plus4) WHEN (mem_to_wb_mem_to_reg = "01") ELSE
-                         mem_dtcm_read_data;
-                         
-    -- JAL instruction register address mux (writes to register 31)
-    wb_write_reg_addr_mux <= "11111" WHEN (mem_to_wb_mem_to_reg = "01") ELSE 
-                             mem_write_reg_addr;
 
-    -- Feedback signals for forwarding
-    wb_alu_result_feedback <= mem_alu_result;
-    wb_dtcm_data_feedback <= mem_dtcm_read_data;
 
--------------------------------------------------------------------------------------
--- BREAKPOINT AND CONTROL LOGIC
--------------------------------------------------------------------------------------
-    -- Breakpoint detection
-    breakpoint_pc <= IF_PC_o;
-    program_run_enable <= '1' WHEN (PBADD_i = breakpoint_pc) ELSE '0'; 
-                                     
-    
-    -- Combined stall control
-    stall_or_run_control <= '1' WHEN (hazard_stall_cnt) ELSE '0';
 
-    -- Pipeline flush control - detect jumps/branches for counting (natural timing handles actual flush)
-    flush_pipeline <= '1' WHEN (id_pc_select = "01" OR id_pc_select = "10") ELSE '0';  -- For statistics only
-
--------------------------------------------------------------------------------------
--- PERFORMANCE COUNTERS AND STATISTICS
--------------------------------------------------------------------------------------
-    -- Stall and flush counters
-    PERFORMANCE_COUNTERS: process (master_clk, rst_i)
-    begin
-        if rst_i = '1' then
-            perf_stall_count <= (others => '0');
-            perf_flush_count <= (others => '0');
-            flush_pipeline_prev <= '0';
-        elsif rising_edge(master_clk) then
-            -- Increment stall counter when stalling
-            if hazard_stall_cnt = '1' then
-                perf_stall_count <= perf_stall_count + '1';
-            end if;
-            
-            -- Increment flush counter when flushing pipeline
-            if flush_pipeline = '1' AND flush_pipeline_prev = '0' then
-                perf_flush_count <= perf_flush_count + '1';
-            end if;
-            
-            flush_pipeline_prev <= flush_pipeline;
-        end if;
-    end process;
-    
-    -- Master clock counter for IPC calculation
-    MASTER_CLOCK_COUNTER: process (master_clk, rst_i)
-    begin
-        if rst_i = '1' then
-            master_clk_cnt <= (others => '0');
-        elsif rising_edge(master_clk) then
-            master_clk_cnt <= master_clk_cnt + '1';
-        end if;
-    end process;
-    
-    -- Instruction counter (from IF stage)
-    perf_inst_count <= if_instruction_count;
-
--------------------------------------------------------------------------------------
--- OUTPUT ASSIGNMENTS FOR PERFORMANCE MONITORING
--------------------------------------------------------------------------------------
-    -- Performance counter outputs
-    STRIGGER_o <= program_run_enable;
-    FH_cnt_o <= perf_flush_count;
-    ST_cnt_o <= perf_stall_count;
-
--------------------------------------------------------------------------------------
--- LEGACY SIGNAL ASSIGNMENTS (for backward compatibility)
--------------------------------------------------------------------------------------
-    -- These signals maintain compatibility with existing testbenches
-    instruction_w <= if_instruction;
-    read_data1_w <= id_read_data1;
-    read_data2_w <= id_read_data2;
-    alu_result_w <= ex_alu_result;
-    dtcm_data_rd_w <= mem_dtcm_read_data;
-    branch_w <= ctrl_branch;
-    zero_w <= ex_zero_flag;
-    reg_write_w <= mem_to_wb_reg_write;
-    mem_write_w <= ex_to_mem_mem_write;
-    MemtoReg_w <= mem_to_wb_mem_to_reg;
-    
-    -- Additional debug outputs
-    pc_o <= if_pc_debug;
-
--------------------------------------------------------------------------------------
+	----------------------- Connect Pipeline Registers ------------------------
+	PROCESS BEGIN
+		WAIT UNTIL clock'EVENT AND clock = '1';
+		-- FIX: the pipeline registers had no reset branch. While reset is
+		-- asserted the PC is pinned at 0, so instruction 0 is re-fetched every
+		-- cycle and copies fill every stage; on reset release they all retire.
+		-- Clearing the "does this commit?" bits keeps the pipe empty until the
+		-- first real fetch.
+		IF (reset = '1') THEN
+			PC_plus_4_ID <= "0000000000";
+			IR_ID        <= X"00000000";
+			RegWrite_EX  <= '0';  MemWrite_EX  <= '0';  MemRead_EX  <= '0';
+			RegWrite_MEM <= '0';  MemWrite_MEM <= '0';  MemRead_MEM <= '0';
+			RegWrite_WB  <= '0';
+		ELSIF  (ena = '1') THEN
+			-------------- Instruction Fetch TO Instruction Decode ---------------- 
+			IF Stall_ID = '0' THEN 
+				PC_plus_4_ID <= PC_plus_4_IF;
+				IR_ID <= IR_IF;		
+				Valid_ID <= '1';
+			END IF;
+			IF (PCSrc_ID(0) = '1' OR PCSrc_ID(1) = '1' OR Flush_IF_Intr = '1')  THEN -- CLR IF_ID
+				PC_plus_4_ID <= "0000000000";
+				IR_ID 		 <= X"00000000";			
+				Valid_ID <= '0';
+			END IF;
+			-------------------- Instruction Decode TO Execute -------------------- 
+			IF (Flush_EX = '1' OR Flush_ID_Intr = '1') THEN -- CLR ID_IF register
+				----- Control Reg ----
+				Branch_EX 	     <= '0';
+				MemtoReg_EX      <= '0';
+				RegWrite_EX      <= '0';
+				MemWrite_EX      <= '0';
+				MemRead_EX	     <= '0';
+				RegDst_EX 	     <= "00";  
+				ALUSrc_EX	     <= '0';
+				ALUOp_EX 	     <= "00";
+				Opcode_EX		 <= "000000";
+				BranchBeq_EX	 <= '0';
+				BranchBne_EX	 <= '0';
+				Jump_EX			 <= '0';
+				Jal_EX			 <= '0';   
+				----- State Reg -----
+				PC_plus_4_EX     <= "0000000000";
+				IR_EX			 <= X"00000000";
+				read_data_1_EX   <= X"00000000";
+				read_data_2_EX   <= X"00000000";
+				Sign_extend_EX   <= X"00000000";
+				Wr_reg_addr_0_EX <= "00000";
+				Wr_reg_addr_1_EX <= "00000";
+				Valid_EX		 <= '0';
+			ELSE 
+				----- Control Reg -----
+				Branch_EX 	     <= Branch_ID;
+				MemtoReg_EX      <= MemtoReg_ID;
+				RegWrite_EX      <= RegWrite_ID;
+				MemWrite_EX      <= MemWrite_ID;
+				MemRead_EX	     <= MemRead_ID;		
+				RegDst_EX 	     <= RegDst_ID;
+				ALUSrc_EX	     <= ALUSrc_ID;
+				ALUOp_EX 	     <= ALUOp_ID;
+				Opcode_EX		 <= IR_ID(31 DOWNTO 26);
+				BranchBeq_EX	 <= BranchBeq_ID;
+				BranchBne_EX	 <= BranchBne_ID;
+				Jump_EX			 <= Jump_ID;
+				Jal_EX			 <= Jal_ID;  
+				
+				-- EPC				<= PC_plus_4_ID;
+				----- State Reg -----
+				PC_plus_4_EX     <= PC_plus_4_ID;	
+				IR_EX			 <= IR_ID;
+				read_data_1_EX   <= read_data_1_ID;  -- rs
+				read_data_2_EX   <= read_data_2_ID;	 -- rt
+				Sign_extend_EX   <= Sign_extend_ID;
+				Wr_reg_addr_0_EX <= Wr_reg_addr_0_ID;
+				Wr_reg_addr_1_EX <= Wr_reg_addr_1_ID;
+				Valid_EX		 <= Valid_ID;
+			END IF;
+			
+			-------------------------- Execute TO Memory --------------------------- 
+			IF (Flush_EX_Intr = '1') THEN 
+				----- Control Reg -----
+				Branch_MEM		<= '0';
+				Zero_MEM		<= '0';
+				MemtoReg_MEM    <= '0';
+				RegWrite_MEM    <= '0';
+				MemWrite_MEM    <= '0';
+				MemRead_MEM	    <= '0';	
+				BranchBeq_MEM	<= '0';
+				BranchBne_MEM	<= '0';
+				Jump_MEM		<= '0';
+				Jal_MEM			<= '0';
+				----- State Reg -----
+				PC_plus_4_MEM	<= "0000000000";
+				Add_Result_MEM  <= X"00";
+				ALU_Result_MEM  <= X"00000000";
+				write_data_MEM	<= X"00000000";   -- was read_data_2_EX
+				Wr_reg_addr_MEM	<= "00000";
+			ELSE
+				----- Control Reg -----
+				Branch_MEM		<= Branch_EX;
+				Zero_MEM		<= Zero_EX;
+				MemtoReg_MEM    <= MemtoReg_EX;
+				RegWrite_MEM    <= RegWrite_EX;
+				MemWrite_MEM    <= MemWrite_EX;
+				MemRead_MEM	    <= MemRead_EX;	
+				BranchBeq_MEM	<= BranchBeq_EX;
+				BranchBne_MEM	<= BranchBne_EX;
+				Jump_MEM		<= Jump_EX;
+				Jal_MEM			<= Jal_EX;
+				----- State Reg -----
+				PC_plus_4_MEM	<= PC_plus_4_EX;
+				Add_Result_MEM  <= Add_Result_EX;
+				ALU_Result_MEM  <= ALU_Result_EX;
+				write_data_MEM	<= write_data_EX;   -- was read_data_2_EX
+				Wr_reg_addr_MEM	<= Wr_reg_addr_EX;
+				IR_MEM			<= IR_EX;
+			END IF;
+			
+			------------------------- Memory TO WriteBack ------------------------- 
+			----- Control Reg -----
+			MemtoReg_WB		<= MemtoReg_MEM;
+			RegWrite_WB		<= RegWrite_MEM;
+			Jal_WB			<= Jal_MEM;
+			
+			----- State Reg -----
+			PC_plus_4_WB	<= PC_plus_4_MEM;
+			-- CRITICAL FIX: Only update read_data_WB for actual memory operations to prevent XXX contamination
+			IF (MemRead_MEM = '1') THEN
+				read_data_WB	<= DataInputBus; -- Only for load instructions
+			ELSE
+				read_data_WB	<= X"00000000";  -- Clean default for non-load instructions (ori, add, etc.)
+			END IF;
+			ALU_Result_WB	<= ALU_Result_MEM;
+			Wr_reg_addr_WB	<= Wr_reg_addr_MEM;
+		END IF;
+		
+	END PROCESS;		
+	---------------------------------------------------------------------------
+	----- Co-simulation trace (simulation only) -----
+    -- Simulation-only. The generate guard keeps the file-I/O process out
+	-- of the synthesised netlist entirely when SIM = FALSE.
+	TRACE_GEN : IF SIM GENERATE
+		TRACE : entity work.retire_tracer
+			generic map (ENABLE => SIM, REG_FILE => "rtl.reg.trace",
+			             MEM_FILE => "rtl.mem.trace")
+			port map (
+				clock          => clock,          reset          => reset,
+				RegWrite_WB    => RegWrite_WB,    Wr_reg_addr_WB => Wr_reg_addr_WB,
+				write_data_WB  => write_data_mux_WB,
+				PC_plus_4_WB   => PC_plus_4_WB,
+				MemWrite_MEM   => MemWrite_MEM,   is_periph_MEM  => is_peripheral_addr,
+				ALU_Result_MEM => ALU_Result_MEM, write_data_MEM => write_data_MEM,
+				PC_plus_4_MEM  => PC_plus_4_MEM);
+	END GENERATE TRACE_GEN;
 END structure;
