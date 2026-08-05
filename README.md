@@ -302,7 +302,6 @@ Fmax **104 MHz** (Cyclone, slow model). Improved from 100 MHz by removing a
 | Duplicate `FIRIFG` on `IntrSrc` bits 7 and 6 | FIR can vector through two different `TYPE` values |
 | `FIRCLK` generated in fabric by `CLOCK_DIVIDER` | Gated clock, poor skew, awkward to constrain; should be a PLL output or a clock enable |
 | Performance counter ports (`CLKCNT`, `STCNT`, `FHCNT`, `BPADD`) declared but never driven | IPC measurement not yet available |
-| Timer registers combinational rather than clocked | Timer does not advance |
 | Hardcoded absolute paths in `init_file` | Breaks on any other machine |
 | Address decoder collisions | Multiple peripherals may respond to the same address |
 
